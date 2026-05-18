@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>台灣便利超商輿情監控儀表板</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh; }
+
+  /* ── Layout ── */
+  .app { max-width: 1280px; margin: 0 auto; padding: 20px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 14px 20px; background: #1a1d2e; border: 1px solid #2d3148; border-radius: 12px; margin-bottom: 16px; }
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 32px; height: 32px; background: #7c3aed; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
+  .logo-text { font-size: 15px; font-weight: 600; color: #f1f5f9; }
+  .logo-sub { font-size: 11px; color: #64748b; margin-top: 1px; }
+  .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block; margin-right: 5px; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+  .status-text { font-size: 12px; color: #94a3b8; }
+  .last-update { font-size: 11px; color: #64748b; }
+  .btn { padding: 7px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.15s; }
+  .btn-primary { background: #7c3aed; color: white; }
+  .btn-primary:hover { background: #6d28d9; }
+  .btn-primary:disabled { background: #4c1d95; color: #7c3aed; cursor: not-allowed; }
+  .btn-ghost { background: #1e2235; color: #94a3b8; border: 1px solid #2d3148; }
+  .btn-ghost:hover { background: #252840; }
+
+  /* ── Grid ── */
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  .grid-2 { display: grid; grid-template-columns: 3fr 2fr; gap: 12px; margin-bottom: 16px; }
+  .grid-2-eq { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+
+  /* ── Cards ── */
+  .card { background: #1a1d2e; border: 1px solid #2d3148; border-radius: 12px; padding: 16px 18px; }
+  .card-title { font-size: 11px; font-weight: 500; color: #64748b; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .kpi-val { font-size: 28px; font-weight: 700; color: #f1f5f9; line-height: 1; }
+  .kpi-sub { font-size: 11px; color: #64748b; margin-top: 4px; }
+  .section-header { font-size: 13px; font-weight: 600; color: #94a3b8; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .zone-badge { width: 20px; height: 20px; border-radius: 50%; background: #252840; border: 1px solid #3d4268; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; color: #7c3aed; }
+
+  /* ── Track badge ── */
+  .track-a { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .track-b { background: #052e16; color: #86efac; border: 1px solid #14532d; padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+
+  /* ── Brand cards ── */
+  .brand-card { background: #1a1d2e; border: 1px solid #2d3148; border-radius: 10px; padding: 14px; }
+  .brand-name { font-size: 13px; font-weight: 600; color: #f1f5f9; margin-bottom: 8px; }
+  .sentiment-bar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; margin: 8px 0; gap: 2px; }
+  .bar-pos { background: #10b981; border-radius: 3px; }
+  .bar-neu { background: #475569; border-radius: 3px; }
+  .bar-neg { background: #ef4444; border-radius: 3px; }
+  .sentiment-nums { display: flex; justify-content: space-between; font-size: 11px; }
+  .pos { color: #10b981; }
+  .neu { color: #64748b; }
+  .neg { color: #ef4444; }
+  .brand-tag { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 4px; margin-top: 6px; font-weight: 500; }
+  .tag-danger { background: #450a0a; color: #fca5a5; }
+  .tag-success { background: #052e16; color: #86efac; }
+  .tag-neutral { background: #1e2235; color: #64748b; }
+
+  /* ── Alert table ── */
+  .alert-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .alert-table th { text-align: left; padding: 8px 10px; color: #475569; font-weight: 500; border-bottom: 1px solid #2d3148; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .alert-table td { padding: 10px; border-bottom: 1px solid #1e2235; color: #cbd5e1; vertical-align: middle; }
+  .alert-table tr:hover td { background: #1e2235; }
+  .score-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-weight: 600; font-size: 11px; }
+  .score-high { background: #450a0a; color: #fca5a5; }
+  .score-mid { background: #431407; color: #fdba74; }
+  .ch-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; background: #1e2235; color: #7c3aed; border: 1px solid #3d2e6b; }
+  .article-link { color: #818cf8; text-decoration: none; }
+  .article-link:hover { color: #a5b4fc; text-decoration: underline; }
+
+  /* ── PR Strategy ── */
+  .pr-box { background: #0f1923; border: 1px solid #1e3a4a; border-radius: 10px; padding: 14px 16px; }
+  .pr-content { font-size: 12px; color: #94a3b8; line-height: 1.7; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
+  .pr-content::-webkit-scrollbar { width: 4px; }
+  .pr-content::-webkit-scrollbar-thumb { background: #334155; border-radius: 2px; }
+
+  /* ── Filter tabs ── */
+  .filter-tabs { display: flex; gap: 6px; margin-bottom: 12px; }
+  .tab { padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; border: 1px solid #2d3148; background: transparent; color: #64748b; transition: all 0.15s; }
+  .tab.active { background: #7c3aed; color: white; border-color: #7c3aed; }
+
+  /* ── Empty state ── */
+  .empty { text-align: center; padding: 40px 20px; color: #475569; }
+  .empty-icon { font-size: 32px; margin-bottom: 10px; }
+  .empty-text { font-size: 13px; }
+
+  /* ── Loading ── */
+  .loading { text-align: center; padding: 30px; color: #475569; font-size: 13px; }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #2d3148; border-top-color: #7c3aed; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 8px; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Channel coverage ── */
+  .ch-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .ch-label { font-size: 12px; color: #94a3b8; width: 90px; flex-shrink: 0; }
+  .ch-bar-wrap { flex: 1; height: 6px; background: #1e2235; border-radius: 3px; overflow: hidden; }
+  .ch-bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
+  .ch-count { font-size: 11px; color: #64748b; width: 28px; text-align: right; }
+
+  /* ── Responsive ── */
+  @media (max-width: 900px) {
+    .grid-4 { grid-template-columns: repeat(2, 1fr); }
+    .grid-2 { grid-template-columns: 1fr; }
+    .grid-2-eq { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Topbar ── -->
+  <div class="topbar">
+    <div class="logo">
+      <div class="logo-icon">📊</div>
+      <div>
+        <div class="logo-text">台灣便利超商輿情監控</div>
+        <div class="logo-sub">Taiwan CVS Public Sentiment Monitor v2.0</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <span class="status-text"><span class="status-dot" id="status-dot"></span><span id="status-label">連線中...</span></span>
+      <span class="last-update" id="last-update">—</span>
+      <button class="btn btn-ghost" onclick="loadData()">↺ 重新整理</button>
+      <button class="btn btn-primary" id="run-btn" onclick="triggerMonitor()">▶ 立即監控</button>
+    </div>
+  </div>
+
+  <!-- ── Zone 1: KPI Bar ── -->
+  <div style="margin-bottom:6px" class="section-header"><span class="zone-badge">1</span> 今日概況</div>
+  <div class="grid-4" id="kpi-grid">
+    <div class="card"><div class="card-title">PR 軌道</div><div id="kpi-track">—</div></div>
+    <div class="card"><div class="card-title">高強度警報</div><div class="kpi-val" id="kpi-alerts">—</div><div class="kpi-sub">強度 ≥ 0.7</div></div>
+    <div class="card"><div class="card-title">分析文章數</div><div class="kpi-val" id="kpi-articles">—</div><div class="kpi-sub">本次執行</div></div>
+    <div class="card"><div class="card-title">主目標品牌</div><div class="kpi-val" style="font-size:18px; margin-top:4px" id="kpi-brand">7-ELEVEN</div><div class="kpi-sub" id="kpi-sentiment-avg">平均情緒強度 —</div></div>
+  </div>
+
+  <!-- ── Zone 2: Brand Matrix + Trend ── -->
+  <div class="section-header"><span class="zone-badge">2</span> 四品牌情緒矩陣</div>
+  <div class="grid-4" id="brand-grid" style="margin-bottom:16px">
+    <div class="loading"><span class="spinner"></span>載入中</div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="card-title">7 日情緒趨勢</div>
+      <div style="position:relative; height:180px">
+        <canvas id="trend-chart"></canvas>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-title">渠道覆蓋分佈</div>
+      <div id="channel-bars" style="margin-top:8px">
+        <div class="loading" style="padding:20px"><span class="spinner"></span>載入中</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Zone 3: Alert Table ── -->
+  <div class="section-header"><span class="zone-badge">3</span> 高強度負面警報</div>
+  <div class="card" style="margin-bottom:16px">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
+      <div class="filter-tabs" id="brand-tabs">
+        <button class="tab active" onclick="filterAlerts('all', this)">全部</button>
+        <button class="tab" onclick="filterAlerts('7-ELEVEN', this)">7-ELEVEN</button>
+        <button class="tab" onclick="filterAlerts('全家', this)">全家</button>
+        <button class="tab" onclick="filterAlerts('萊爾富', this)">萊爾富</button>
+        <button class="tab" onclick="filterAlerts('OK mart', this)">OK mart</button>
+      </div>
+      <span style="font-size:11px; color:#475569" id="alert-count-label"></span>
+    </div>
+    <div id="alert-table-wrap">
+      <div class="loading"><span class="spinner"></span>載入中</div>
+    </div>
+  </div>
+
+  <!-- ── Zone 4: PR Strategy ── -->
+  <div class="section-header"><span class="zone-badge">4</span> 最新 PR 策略建議</div>
+  <div class="grid-2-eq">
+    <div class="card">
+      <div class="card-title">軌道判定依據</div>
+      <div id="track-reason" style="font-size:12px; color:#94a3b8; line-height:1.7">—</div>
+    </div>
+    <div class="card">
+      <div class="card-title">策略摘要</div>
+      <div class="pr-box">
+        <div class="pr-content" id="pr-content">尚未有 PR 策略資料。請先執行監控。</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const API = 'https://web-production-7a3df.up.railway.app';
+const BRANDS = ['7-ELEVEN', '全家', '萊爾富', 'OK mart'];
+const CH_COLORS = { google_news: '#818cf8', ptt: '#34d399', dcard: '#fb923c' };
+const BRAND_COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6'];
+
+let allAlerts = [];
+let trendChart = null;
+
+async function loadData() {
+  try {
+    const [healthRes, runsRes] = await Promise.all([
+      fetch(`${API}/health`),
+      fetch(`${API}/runs/recent?limit=30`)
+    ]);
+    const health = await healthRes.json();
+    const runsData = await runsRes.json();
+
+    updateStatus(health);
+    if (runsData.runs && runsData.runs.length > 0) {
+      processRuns(runsData.runs);
+    } else {
+      showEmptyState();
+    }
+  } catch (e) {
+    document.getElementById('status-label').textContent = 'API 連線失敗';
+    document.getElementById('status-dot').style.background = '#ef4444';
+    showEmptyState();
+  }
+}
+
+function updateStatus(health) {
+  document.getElementById('status-label').textContent = 'API 正常';
+  document.getElementById('status-dot').style.background = '#10b981';
+  const ts = new Date(health.timestamp);
+  document.getElementById('last-update').textContent = `更新：${ts.toLocaleTimeString('zh-TW')}`;
+}
+
+function processRuns(runs) {
+  // Group by keyword (brand)
+  const brandMap = {};
+  const channelCounts = { google_news: 0, ptt: 0, dcard: 0 };
+  let totalAlerts = 0, totalArticles = 0;
+  allAlerts = [];
+
+  runs.forEach(run => {
+    const kw = run.keyword || '未知';
+    if (!brandMap[kw]) brandMap[kw] = { pos: 0, neu: 0, neg: 0, total: 0, scores: [], track: null, pr: null };
+    const bm = brandMap[kw];
+
+    if (run.analyses) {
+      run.analyses.forEach(a => {
+        totalArticles++;
+        bm.total++;
+        const s = a.sentiment;
+        if (s === '正面') bm.pos++;
+        else if (s === '負面') bm.neg++;
+        else bm.neu++;
+        bm.scores.push(a.score || 0);
+        const ch = a.channel || '';
+        if (ch in channelCounts) channelCounts[ch]++;
+
+        if ((a.score || 0) >= 0.7 && s === '負面') {
+          totalAlerts++;
+          allAlerts.push({
+            brand: kw, channel: ch, title: a.title || '—',
+            url: a.url || '#', score: a.score, theme: a.theme || '—',
+            published: a.published_at || ''
+          });
+        }
+      });
+    }
+    if (run.pr_report) bm.pr = run.pr_report;
+    if (run.track) bm.track = run.track;
+  });
+
+  allAlerts.sort((a, b) => b.score - a.score);
+
+  renderKPIs(brandMap, totalAlerts, totalArticles);
+  renderBrandCards(brandMap);
+  renderTrend(runs);
+  renderChannelBars(channelCounts);
+  renderAlertTable(allAlerts);
+  renderPRStrategy(brandMap);
+}
+
+function renderKPIs(brandMap, totalAlerts, totalArticles) {
+  const primary = brandMap['7-ELEVEN'] || Object.values(brandMap)[0];
+  const track = primary ? (primary.neg > (primary.pos + primary.neu) / 2 ? 'A' : 'B') : null;
+
+  document.getElementById('kpi-track').innerHTML = track === 'A'
+    ? '<span class="track-a">Track A — 危機應對</span>'
+    : track === 'B'
+    ? '<span class="track-b">Track B — 品牌進攻</span>'
+    : '<span style="color:#475569">—</span>';
+
+  document.getElementById('kpi-alerts').textContent = totalAlerts;
+  document.getElementById('kpi-articles').textContent = totalArticles;
+
+  if (primary && primary.scores.length > 0) {
+    const avg = (primary.scores.reduce((a, b) => a + b, 0) / primary.scores.length).toFixed(2);
+    document.getElementById('kpi-sentiment-avg').textContent = `平均情緒強度 ${avg}`;
+  }
+}
+
+function renderBrandCards(brandMap) {
+  const grid = document.getElementById('brand-grid');
+  if (Object.keys(brandMap).length === 0) { grid.innerHTML = '<div class="loading">尚無品牌資料</div>'; return; }
+
+  grid.innerHTML = BRANDS.map(brand => {
+    const b = brandMap[brand];
+    if (!b) return `<div class="brand-card"><div class="brand-name">${brand}</div><div style="font-size:11px;color:#475569">本次未監控</div></div>`;
+    const total = b.total || 1;
+    const posW = Math.round(b.pos / total * 100);
+    const neuW = Math.round(b.neu / total * 100);
+    const negW = 100 - posW - neuW;
+    const dominant = b.neg > b.pos && b.neg > b.neu ? 'danger' : b.pos > b.neg && b.pos > b.neu ? 'success' : 'neutral';
+    const tagText = dominant === 'danger' ? '負面主導' : dominant === 'success' ? '正面主導' : '中立';
+    return `<div class="brand-card">
+      <div class="brand-name">${brand}</div>
+      <div class="sentiment-bar">
+        <div class="bar-pos" style="width:${posW}%"></div>
+        <div class="bar-neu" style="width:${neuW}%"></div>
+        <div class="bar-neg" style="width:${negW}%"></div>
+      </div>
+      <div class="sentiment-nums">
+        <span class="pos">正 ${b.pos}</span>
+        <span class="neu">中 ${b.neu}</span>
+        <span class="neg">負 ${b.neg}</span>
+      </div>
+      <span class="brand-tag tag-${dominant}">${tagText}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderTrend(runs) {
+  const ctx = document.getElementById('trend-chart').getContext('2d');
+  const byDate = {};
+  BRANDS.forEach(b => byDate[b] = {});
+  runs.forEach(run => {
+    const date = (run.created_at || '').split('T')[0];
+    const kw = run.keyword;
+    if (!date || !kw || !BRANDS.includes(kw)) return;
+    if (!byDate[kw][date]) byDate[kw][date] = { sum: 0, cnt: 0 };
+    (run.analyses || []).forEach(a => {
+      byDate[kw][date].sum += (a.score || 0);
+      byDate[kw][date].cnt++;
+    });
+  });
+
+  const dates = [...new Set(runs.map(r => (r.created_at || '').split('T')[0]).filter(Boolean))].sort().slice(-7);
+  if (trendChart) trendChart.destroy();
+
+  trendChart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: dates.map(d => d.slice(5)),
+      datasets: BRANDS.map((b, i) => ({
+        label: b,
+        data: dates.map(d => {
+          const v = byDate[b][d];
+          return v && v.cnt > 0 ? parseFloat((v.sum / v.cnt).toFixed(2)) : null;
+        }),
+        borderColor: BRAND_COLORS[i],
+        backgroundColor: 'transparent',
+        tension: 0.3,
+        pointRadius: 4,
+        spanGaps: true,
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#64748b', font: { size: 10 }, boxWidth: 12, padding: 8 } } },
+      scales: {
+        x: { ticks: { color: '#475569', font: { size: 10 } }, grid: { color: '#1e2235' } },
+        y: { min: 0, max: 1, ticks: { color: '#475569', font: { size: 10 }, stepSize: 0.2 }, grid: { color: '#1e2235' } }
+      }
+    }
+  });
+}
+
+function renderChannelBars(counts) {
+  const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
+  const labels = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard' };
+  document.getElementById('channel-bars').innerHTML = Object.entries(counts).map(([ch, cnt]) => `
+    <div class="ch-row">
+      <span class="ch-label">${labels[ch]}</span>
+      <div class="ch-bar-wrap"><div class="ch-bar-fill" style="width:${Math.round(cnt/total*100)}%; background:${CH_COLORS[ch]}"></div></div>
+      <span class="ch-count">${cnt}</span>
+    </div>`).join('');
+}
+
+function filterAlerts(brand, btn) {
+  document.querySelectorAll('.filter-tabs .tab').forEach(t => t.classList.remove('active'));
+  btn.classList.add('active');
+  const filtered = brand === 'all' ? allAlerts : allAlerts.filter(a => a.brand === brand);
+  renderAlertTable(filtered);
+}
+
+function renderAlertTable(alerts) {
+  const wrap = document.getElementById('alert-table-wrap');
+  document.getElementById('alert-count-label').textContent = `共 ${alerts.length} 筆`;
+
+  if (alerts.length === 0) {
+    wrap.innerHTML = `<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">${allAlerts.length === 0 ? '尚無監控資料，請先執行監控' : '此品牌無高強度負面警報'}</div></div>`;
+    return;
+  }
+
+  wrap.innerHTML = `<table class="alert-table">
+    <thead><tr>
+      <th>品牌</th><th>渠道</th><th>標題</th><th>強度</th><th>主題</th><th>時間</th>
+    </tr></thead>
+    <tbody>${alerts.slice(0, 20).map(a => {
+      const scoreClass = a.score >= 0.9 ? 'score-high' : 'score-mid';
+      const ch = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard' }[a.channel] || a.channel;
+      const date = a.published ? a.published.slice(0, 10) : '—';
+      return `<tr>
+        <td style="color:#e2e8f0; font-weight:500">${a.brand}</td>
+        <td><span class="ch-badge">${ch}</span></td>
+        <td><a class="article-link" href="${a.url}" target="_blank" rel="noopener">${(a.title || '').slice(0, 45)}${a.title && a.title.length > 45 ? '…' : ''}</a></td>
+        <td><span class="score-badge ${scoreClass}">${typeof a.score === 'number' ? a.score.toFixed(1) : '—'}</span></td>
+        <td style="color:#64748b">${a.theme}</td>
+        <td style="color:#475569">${date}</td>
+      </tr>`;
+    }).join('')}</tbody>
+  </table>`;
+}
+
+function renderPRStrategy(brandMap) {
+  const primary = brandMap['7-ELEVEN'] || Object.values(brandMap)[0];
+  if (!primary) return;
+
+  const track = primary.neg > (primary.pos + primary.neu) / 2 ? 'A' : 'B';
+  const total = primary.total || 1;
+  const negPct = Math.round(primary.neg / total * 100);
+  const posPct = Math.round(primary.pos / total * 100);
+  const avgScore = primary.scores.length > 0 ? (primary.scores.reduce((a, b) => a + b, 0) / primary.scores.length).toFixed(2) : '—';
+
+  document.getElementById('track-reason').innerHTML = `
+    <div style="margin-bottom:8px">
+      <span style="color:#94a3b8">軌道：</span>
+      ${track === 'A' ? '<span class="track-a">Track A</span>' : '<span class="track-b">Track B</span>'}
+    </div>
+    <div style="margin-bottom:4px"><span style="color:#64748b">負面佔比</span> <span style="color:#fca5a5">${negPct}%</span></div>
+    <div style="margin-bottom:4px"><span style="color:#64748b">正面佔比</span> <span style="color:#86efac">${posPct}%</span></div>
+    <div style="margin-bottom:4px"><span style="color:#64748b">平均強度</span> <span style="color:#e2e8f0">${avgScore}</span></div>
+    <div style="margin-top:10px; font-size:11px; color:#475569">
+      ${track === 'A' ? '負面聲量過半或高強度警報觸發 Track A 危機應對模式' : '正面聲量主導，啟動 Track B 品牌進攻模式'}
+    </div>`;
+
+  if (primary.pr) {
+    document.getElementById('pr-content').textContent = primary.pr.slice(0, 800) + (primary.pr.length > 800 ? '\n\n⋯⋯（查看完整報告請執行 daily_report.py）' : '');
+  }
+}
+
+function showEmptyState() {
+  document.getElementById('brand-grid').innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📭</div><div class="empty-text">尚無監控資料<br><span style="font-size:11px;color:#334155;margin-top:6px;display:block">點「立即監控」執行第一次採集</span></div></div>`;
+  document.getElementById('alert-table-wrap').innerHTML = `<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">尚無資料</div></div>`;
+  document.getElementById('channel-bars').innerHTML = `<div style="color:#475569;font-size:12px;padding:20px 0">尚無渠道資料</div>`;
+  ['kpi-alerts','kpi-articles'].forEach(id => document.getElementById(id).textContent = '0');
+  document.getElementById('kpi-track').innerHTML = '<span style="color:#475569">—</span>';
+  document.getElementById('status-label').textContent = 'API 正常 · 無資料';
+  document.getElementById('last-update').textContent = `更新：${new Date().toLocaleTimeString('zh-TW')}`;
+}
+
+async function triggerMonitor() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 監控中...';
+  try {
+    const res = await fetch(`${API}/runs/monitor`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keywords: ['7-ELEVEN', '全家', '萊爾富', 'OK mart'], fresh: false })
+    });
+    const data = await res.json();
+    btn.textContent = '✓ 已觸發';
+    setTimeout(() => {
+      btn.disabled = false;
+      btn.textContent = '▶ 立即監控';
+      loadData();
+    }, 8000);
+  } catch (e) {
+    btn.disabled = false;
+    btn.textContent = '▶ 立即監控';
+    alert('觸發失敗：' + e.message);
+  }
+}
+
+loadData();
+setInterval(loadData, 5 * 60 * 1000);
+</script>
+</body>
+</html>
