@@ -138,7 +138,7 @@
       <span class="status-text"><span class="status-dot" id="status-dot"></span><span id="status-label">連線中...</span></span>
       <span class="last-update" id="last-update">—</span>
       <button class="btn btn-ghost" id="refresh-btn" onclick="loadData()">↺ 重新整理</button>
-      <button class="btn btn-primary" id="run-btn" onclick="triggerMonitor()">▶ 立即監控</button>
+      <button class="btn btn-primary" id="run-btn" onclick="triggerMonitor()">↻ 更新輿情資料</button>
     </div>
   </div>
 
@@ -165,7 +165,7 @@
   <div class="grid-4" id="kpi-grid">
     <div class="card"><div class="card-title">公關風險警報</div><div class="kpi-val" id="kpi-alerts">—</div><div class="kpi-sub" id="kpi-alert-sub">主品牌綜合風險分數</div><div class="kpi-note" id="kpi-alert-note">—</div></div>
     <div class="card"><div class="card-title">今日論述</div><div class="narrative-text" id="kpi-narrative">—</div></div>
-    <div class="card"><div class="card-title">分析文章數</div><div class="kpi-val" id="kpi-articles">—</div><div class="kpi-sub">本次執行</div></div>
+    <div class="card"><div class="card-title">分析文章數</div><div class="kpi-val" id="kpi-articles">—</div><div class="kpi-sub">今日累積</div></div>
     <div class="card"><div class="card-title">主目標品牌</div><div class="kpi-val" style="font-size:18px; margin-top:4px" id="kpi-brand">7-ELEVEN</div><div class="kpi-sub" id="kpi-sentiment-avg">平均情緒強度 —</div></div>
   </div>
 
@@ -231,44 +231,36 @@ const API = 'https://web-production-7a3df.up.railway.app';
 const BRANDS = ['7-ELEVEN', '全家', '萊爾富', 'OK mart'];
 const CH_COLORS = { google_news: '#818cf8', ptt: '#34d399', dcard: '#fb923c', youtube: '#f87171' };
 const BRAND_COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6'];
-const { normalizeScore, buildPrimarySummary, getArticleRiskBadge, deriveProgressState, inferBatchStart, selectLatestCompletedRunsByKeyword, summarizeCommentInsights } = window.DashboardSummary;
+const { normalizeScore, buildPrimarySummary, getArticleRiskBadge, deriveProgressState, inferBatchStart, summarizeCommentInsights } = window.DashboardSummary;
 
 let allAlerts = [];
 let trendChart = null;
 
 async function loadData() {
   try {
-    const [healthRes, runsRes] = await Promise.all([
+    const [healthRes, todayRes, runsRes] = await Promise.all([
       fetch(`${API}/health`),
+      fetch(`${API}/dashboard/today`),
       fetch(`${API}/runs/recent?limit=30`)
     ]);
     const health = await healthRes.json();
+    const today = await todayRes.json();
     const runsData = await runsRes.json();
+    const completedRuns = (runsData.runs || []).filter(run => run.ended_at).slice(0, 20);
+    const detailRows = await Promise.all(
+      completedRuns.map(run => fetch(`${API}/runs/${run.id}`).then(res => res.json()).catch(() => null))
+    );
+    const recentDetailedRuns = detailRows
+      .filter(Boolean)
+      .map(row => ({
+        ...row.run,
+        analyses: row.analyses || [],
+      }));
 
-    updateStatus(health);
-    if (runsData.runs && runsData.runs.length > 0) {
-      // Fetch only the latest completed run for each keyword.
-      const completedRuns = selectLatestCompletedRunsByKeyword(runsData.runs, 12);
-      if (completedRuns.length === 0) {
-        showEmptyState('監控執行中，請稍候…');
-        return;
-      }
-      const details = await Promise.all(
-        completedRuns.map(r =>
-          fetch(`${API}/runs/${r.id}`).then(res => res.json()).catch(() => null)
-        )
-      );
-      const fullRuns = details
-        .filter(Boolean)
-        .map(d => ({
-          ...d.run,
-          analyses: d.analyses || [],
-          item_analyses: d.item_analyses || [],
-          pr_report: d.pr_report ? d.pr_report.report : null,
-          dashboard_summary: d.pr_report ? d.pr_report.dashboard_summary : null,
-          track: d.pr_report ? d.pr_report.track : null
-        }));
-      processRuns(fullRuns);
+    updateStatus(health, today);
+    syncMonitorButton(today.active_batch || null);
+    if (today.brand_map && Object.keys(today.brand_map).length > 0) {
+      processTodaySummary(today, recentDetailedRuns);
     } else {
       showEmptyState();
     }
@@ -279,76 +271,33 @@ async function loadData() {
   }
 }
 
-function updateStatus(health) {
+function updateStatus(health, today) {
   document.getElementById('status-label').textContent = 'API 正常';
   document.getElementById('status-dot').style.background = '#10b981';
-  const ts = new Date(health.timestamp);
+  const ts = today && today.updated_at ? new Date(today.updated_at) : new Date(health.timestamp);
   document.getElementById('last-update').textContent = `更新：${ts.toLocaleTimeString('zh-TW')}`;
 }
 
-function processRuns(runs) {
-  // Group by keyword (brand)
-  const brandMap = {};
-  const channelCounts = { google_news: 0, ptt: 0, dcard: 0, youtube: 0 };
-  let totalAlerts = 0, totalArticles = 0;
-  allAlerts = [];
-  const seenArticles = new Set(); // 標題去重，避免多 keyword run 重複計算同一篇
-  const seenAlerts = new Set();   // 警報表去重
+function syncMonitorButton(activeBatch) {
+  const btn = document.getElementById('run-btn');
+  if (activeBatch) {
+    btn.disabled = true;
+    btn.textContent = '更新中...';
+    return;
+  }
+  btn.disabled = false;
+  btn.textContent = '↻ 更新輿情資料';
+}
 
-  runs.forEach(run => {
-    const kw = run.keyword || '未知';
-    if (!brandMap[kw]) brandMap[kw] = { pos: 0, neu: 0, neg: 0, total: 0, scores: [], analyses: [], itemAnalyses: [], alerts: [], pr: null, dashboardSummary: null, keyword: kw };
-    const bm = brandMap[kw];
+function processTodaySummary(today, recentRuns) {
+  const brandMap = today.brand_map || {};
+  const channelCounts = today.channel_counts || { google_news: 0, ptt: 0, dcard: 0, youtube: 0 };
+  allAlerts = (today.all_alerts || []).map(item => ({ ...item, score: normalizeScore(item.score) }));
+  const totalArticles = today.total_articles || 0;
 
-    if (run.analyses) {
-      run.analyses.forEach(a => {
-        const articleKey = `${a.channel}:${a.title}`;
-        const isDup = seenArticles.has(articleKey);
-        if (!isDup) seenArticles.add(articleKey);
-
-        // 品牌計數仍各自累計（同篇文章可被不同品牌 run 分析）
-        totalArticles++;
-        bm.total++;
-        const s = a.sentiment;
-        if (s === '正面') bm.pos++;
-        else if (s === '負面') bm.neg++;
-        else bm.neu++;
-        const normScore = normalizeScore(a.score);
-        bm.scores.push(normScore);
-        bm.analyses.push({ ...a, score: normScore });
-        const ch = a.channel || '';
-        if (ch in channelCounts && !isDup) channelCounts[ch]++;
-
-        // 警報門檻：公關風險 >= 3（⚠️ 中度關注以上）且負面
-        if (normScore >= 3 && s === '負面') {
-          const alertKey = `${ch}:${a.title}`;
-          if (!seenAlerts.has(alertKey)) {
-            seenAlerts.add(alertKey);
-            totalAlerts++;
-            allAlerts.push({
-              brand: kw, channel: ch, title: a.title || '—',
-              url: a.url || '#', score: normScore, theme: a.theme || '—',
-              published: a.published_at || ''
-            });
-            bm.alerts.push({
-              brand: kw, channel: ch, title: a.title || '—',
-              url: a.url || '#', score: normScore, theme: a.theme || '—',
-              published: a.published_at || ''
-            });
-          }
-        }
-      });
-    }
-    if (run.pr_report) bm.pr = run.pr_report;
-    if (run.dashboard_summary) bm.dashboardSummary = run.dashboard_summary;
-    if (run.item_analyses) bm.itemAnalyses.push(...run.item_analyses);
-  });
-
-  allAlerts.sort((a, b) => b.score - a.score);
-
-  renderKPIs(brandMap, totalAlerts, totalArticles);
+  renderKPIs(brandMap, allAlerts.length, totalArticles);
   renderBrandCards(brandMap);
-  renderTrend(runs);
+  renderTrend(recentRuns || []);
   renderChannelBars(channelCounts);
   renderAlertTable(allAlerts);
   renderPRStrategy(brandMap);
@@ -407,7 +356,7 @@ function renderTrend(runs) {
   const byDate = {};
   BRANDS.forEach(b => byDate[b] = {});
   runs.forEach(run => {
-    const date = (run.created_at || '').split('T')[0];
+    const date = (run.started_at || run.ended_at || '').split('T')[0];
     const kw = run.keyword;
     if (!date || !kw || !BRANDS.includes(kw)) return;
     if (!byDate[kw][date]) byDate[kw][date] = { sum: 0, cnt: 0 };
@@ -417,7 +366,7 @@ function renderTrend(runs) {
     });
   });
 
-  const dates = [...new Set(runs.map(r => (r.created_at || '').split('T')[0]).filter(Boolean))].sort().slice(-7);
+  const dates = [...new Set(runs.map(r => (r.started_at || r.ended_at || '').split('T')[0]).filter(Boolean))].sort().slice(-7);
   if (trendChart) trendChart.destroy();
 
   trendChart = new Chart(ctx, {
@@ -540,7 +489,7 @@ function renderPRStrategy(brandMap) {
 }
 
 function showEmptyState(msg) {
-  const hint = msg || '點「立即監控」執行第一次採集';
+  const hint = msg || '點「更新輿情資料」執行第一次採集';
   document.getElementById('brand-grid').innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📭</div><div class="empty-text">尚無監控資料<br><span style="font-size:11px;color:#334155;margin-top:6px;display:block">${hint}</span></div></div>`;
   document.getElementById('alert-table-wrap').innerHTML = `<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">尚無資料</div></div>`;
   document.getElementById('channel-bars').innerHTML = `<div style="color:#475569;font-size:12px;padding:20px 0">尚無渠道資料</div>`;
@@ -599,7 +548,7 @@ async function triggerMonitor() {
   const btn = document.getElementById('run-btn');
   const refreshBtn = document.getElementById('refresh-btn');
   btn.disabled = true;
-  btn.textContent = '採集中...';
+  btn.textContent = '更新中...';
   refreshBtn.disabled = true;
 
   try {
@@ -608,7 +557,14 @@ async function triggerMonitor() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ keywords: MONITOR_KEYWORDS, fresh: false })
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    if (!res.ok) {
+      let errorMessage = `HTTP ${res.status}`;
+      try {
+        const errorData = await res.json();
+        if (res.status === 409) errorMessage = errorData.detail?.message || '已有更新任務執行中';
+      } catch (_) {}
+      throw new Error(errorMessage);
+    }
     const data = await res.json();
 
     setMonitorTriggeredAt(data.triggered_at || new Date().toISOString());
@@ -618,8 +574,9 @@ async function triggerMonitor() {
 
   } catch (e) {
     btn.disabled = false;
-    btn.textContent = '▶ 立即監控';
+    btn.textContent = '↻ 更新輿情資料';
     refreshBtn.disabled = false;
+    await loadData();
     alert('觸發失敗：' + e.message);
   }
 }
@@ -632,11 +589,6 @@ function showProgressPanel() {
 function hideProgressPanel() {
   document.getElementById('monitor-progress').style.display = 'none';
   setMonitorTriggeredAt(null);
-  const btn = document.getElementById('run-btn');
-  const refreshBtn = document.getElementById('refresh-btn');
-  btn.disabled = false;
-  btn.textContent = '▶ 立即監控';
-  refreshBtn.disabled = false;
 }
 
 function setProgressStatus(pct, brandLabel, statusText) {
@@ -672,6 +624,7 @@ async function pollMonitorProgress() {
       clearInterval(monitorPoller);
       monitorPoller = null;
       hideProgressPanel();
+      await loadData();
       return;
     }
 

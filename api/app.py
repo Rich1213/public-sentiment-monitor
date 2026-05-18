@@ -70,17 +70,32 @@ class HealthResponse(BaseModel):
     version: str
 
 
+class DashboardTodayResponse(BaseModel):
+    snapshot_date: str
+    updated_at: Optional[str] = None
+    active_batch: Optional[dict] = None
+    brand_map: dict
+    channel_counts: dict
+    all_alerts: list
+    total_articles: int
+
+
 # ─────────────────────────────────────────────────────────────
 # 背景任務執行器
 # ─────────────────────────────────────────────────────────────
 
-def _run_monitor_bg(keywords: List[str], fresh: bool) -> None:
+def _run_monitor_bg(keywords: List[str], fresh: bool, batch_id: int) -> None:
     """在背景執行完整監控流程（供 BackgroundTasks 呼叫）。"""
     from worker.runner import run_all_brands
+    db = SentimentDB()
     try:
-        run_all_brands(keywords=keywords, fresh_mode=fresh)
+        run_all_brands(keywords=keywords, fresh_mode=fresh, batch_id=batch_id)
     except Exception as e:
         logger.error("背景監控任務失敗：%s", e, exc_info=True)
+        try:
+            db.close_monitor_batch(batch_id, status="failed")
+        except Exception:
+            logger.error("關閉 monitor batch 失敗：%s", batch_id, exc_info=True)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -113,8 +128,21 @@ def trigger_monitor(req: MonitorRequest, background_tasks: BackgroundTasks):
     env_kws = [k.strip() for k in env_kws_str.split(",") if k.strip()]
 
     keywords = req.keywords or env_kws or default_kws
+    db = SentimentDB()
+    active_batch = db.get_active_monitor_batch()
+    if active_batch:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "已有輿情更新任務執行中",
+                "batch_id": active_batch.get("id"),
+                "started_at": active_batch.get("started_at"),
+                "keywords": active_batch.get("keywords") or [],
+            },
+        )
 
-    background_tasks.add_task(_run_monitor_bg, keywords=keywords, fresh=req.fresh)
+    batch_id = db.create_monitor_batch(keywords=keywords, fresh_mode=req.fresh)
+    background_tasks.add_task(_run_monitor_bg, keywords=keywords, fresh=req.fresh, batch_id=batch_id)
 
     return MonitorResponse(
         status="accepted",
@@ -122,6 +150,47 @@ def trigger_monitor(req: MonitorRequest, background_tasks: BackgroundTasks):
         keywords=keywords,
         triggered_at=datetime.utcnow().isoformat() + "Z",
     )
+
+
+@app.get("/dashboard/today", response_model=DashboardTodayResponse, tags=["Dashboard"])
+def dashboard_today(
+    date: Optional[str] = Query(default=None, description="日期 YYYY-MM-DD，預設今天"),
+):
+    db = SentimentDB()
+    try:
+        summary = db.get_dashboard_day_summary(snapshot_date=date)
+        db.save_daily_snapshots(snapshot_date=summary["snapshot_date"])
+        return summary
+    except Exception as e:
+        logger.error("查詢 dashboard today 失敗：%s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/snapshots/recent", tags=["Snapshots"])
+def recent_snapshots(
+    limit: int = Query(default=31, ge=1, le=90, description="回傳筆數"),
+    keyword: Optional[str] = Query(default=None, description="指定品牌"),
+):
+    db = SentimentDB()
+    try:
+        rows = db.get_daily_snapshots(limit=limit, keyword=keyword)
+        return {"snapshots": rows, "count": len(rows)}
+    except Exception as e:
+        logger.error("查詢 snapshots 失敗：%s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/snapshots/capture", tags=["Snapshots"])
+def capture_snapshot(
+    date: Optional[str] = Query(default=None, description="日期 YYYY-MM-DD，預設今天"),
+):
+    db = SentimentDB()
+    try:
+        written = db.save_daily_snapshots(snapshot_date=date)
+        return {"status": "ok", "snapshot_date": date or datetime.now().strftime("%Y-%m-%d"), "written": written}
+    except Exception as e:
+        logger.error("建立 snapshot 失敗：%s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/runs/recent", tags=["Monitor"])

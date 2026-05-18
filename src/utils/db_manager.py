@@ -22,6 +22,7 @@ Analysis  LLM 結果
 """
 
 import os
+import json
 import hashlib
 import logging
 from datetime import datetime, timedelta
@@ -236,6 +237,35 @@ class SentimentDB:
                 c.execute("ALTER TABLE thread_items ADD COLUMN IF NOT EXISTS published_at TEXT")
                 c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_threads_platform_id ON threads(platform_id)")
                 c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_items_platform_item_id ON thread_items(platform_item_id)")
+                c.execute("""CREATE TABLE IF NOT EXISTS monitor_batches (
+                    id         SERIAL PRIMARY KEY,
+                    batch_key  TEXT    NOT NULL,
+                    keywords   TEXT    NOT NULL,
+                    fresh_mode INTEGER DEFAULT 0,
+                    started_at TEXT    NOT NULL,
+                    ended_at   TEXT,
+                    status     TEXT    DEFAULT 'running'
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_monitor_batches_open ON monitor_batches(batch_key, ended_at)")
+                c.execute("""CREATE TABLE IF NOT EXISTS daily_snapshots (
+                    id                SERIAL PRIMARY KEY,
+                    snapshot_date     TEXT    NOT NULL,
+                    keyword           TEXT    NOT NULL,
+                    snapshot_at       TEXT    NOT NULL,
+                    risk_score        INTEGER DEFAULT 0,
+                    article_count     INTEGER DEFAULT 0,
+                    pos_count         INTEGER DEFAULT 0,
+                    neu_count         INTEGER DEFAULT 0,
+                    neg_count         INTEGER DEFAULT 0,
+                    high_risk_count   INTEGER DEFAULT 0,
+                    avg_score         REAL    DEFAULT 0,
+                    channel_breakdown TEXT,
+                    top_themes        TEXT,
+                    dashboard_summary TEXT,
+                    payload_json      TEXT,
+                    UNIQUE(snapshot_date, keyword)
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date ON daily_snapshots(snapshot_date)")
             else:
                 c.execute("PRAGMA table_info(pr_reports)")
                 cols = [row["name"] for row in c.fetchall()]
@@ -255,6 +285,35 @@ class SentimentDB:
                     c.execute("ALTER TABLE thread_items ADD COLUMN published_at TEXT")
                 c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_threads_platform_id ON threads(platform_id)")
                 c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_items_platform_item_id ON thread_items(platform_item_id)")
+                c.execute("""CREATE TABLE IF NOT EXISTS monitor_batches (
+                    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                    batch_key  TEXT    NOT NULL,
+                    keywords   TEXT    NOT NULL,
+                    fresh_mode INTEGER DEFAULT 0,
+                    started_at TEXT    NOT NULL,
+                    ended_at   TEXT,
+                    status     TEXT    DEFAULT 'running'
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_monitor_batches_open ON monitor_batches(batch_key, ended_at)")
+                c.execute("""CREATE TABLE IF NOT EXISTS daily_snapshots (
+                    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                    snapshot_date     TEXT    NOT NULL,
+                    keyword           TEXT    NOT NULL,
+                    snapshot_at       TEXT    NOT NULL,
+                    risk_score        INTEGER DEFAULT 0,
+                    article_count     INTEGER DEFAULT 0,
+                    pos_count         INTEGER DEFAULT 0,
+                    neu_count         INTEGER DEFAULT 0,
+                    neg_count         INTEGER DEFAULT 0,
+                    high_risk_count   INTEGER DEFAULT 0,
+                    avg_score         REAL    DEFAULT 0,
+                    channel_breakdown TEXT,
+                    top_themes        TEXT,
+                    dashboard_summary TEXT,
+                    payload_json      TEXT,
+                    UNIQUE(snapshot_date, keyword)
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date ON daily_snapshots(snapshot_date)")
             conn.commit()
         except Exception:
             conn.rollback()
@@ -292,6 +351,17 @@ class SentimentDB:
                 articles_new   INTEGER DEFAULT 0,
                 fresh_mode     INTEGER DEFAULT 0
             );
+
+            CREATE TABLE IF NOT EXISTS monitor_batches (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                batch_key  TEXT    NOT NULL,
+                keywords   TEXT    NOT NULL,
+                fresh_mode INTEGER DEFAULT 0,
+                started_at TEXT    NOT NULL,
+                ended_at   TEXT,
+                status     TEXT    DEFAULT 'running'
+            );
+            CREATE INDEX IF NOT EXISTS idx_monitor_batches_open ON monitor_batches(batch_key, ended_at);
 
             CREATE TABLE IF NOT EXISTS threads (
                 id           TEXT PRIMARY KEY,
@@ -374,6 +444,26 @@ class SentimentDB:
                 report     TEXT,
                 created_at TEXT   DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS daily_snapshots (
+                id                INTEGER PRIMARY KEY AUTOINCREMENT,
+                snapshot_date     TEXT    NOT NULL,
+                keyword           TEXT    NOT NULL,
+                snapshot_at       TEXT    NOT NULL,
+                risk_score        INTEGER DEFAULT 0,
+                article_count     INTEGER DEFAULT 0,
+                pos_count         INTEGER DEFAULT 0,
+                neu_count         INTEGER DEFAULT 0,
+                neg_count         INTEGER DEFAULT 0,
+                high_risk_count   INTEGER DEFAULT 0,
+                avg_score         REAL    DEFAULT 0,
+                channel_breakdown TEXT,
+                top_themes        TEXT,
+                dashboard_summary TEXT,
+                payload_json      TEXT,
+                UNIQUE(snapshot_date, keyword)
+            );
+            CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date ON daily_snapshots(snapshot_date);
         """
 
     def _postgres_schema_statements(self) -> List[str]:
@@ -402,6 +492,16 @@ class SentimentDB:
                 articles_new   INTEGER DEFAULT 0,
                 fresh_mode     INTEGER DEFAULT 0
             )""",
+            """CREATE TABLE IF NOT EXISTS monitor_batches (
+                id         SERIAL PRIMARY KEY,
+                batch_key  TEXT    NOT NULL,
+                keywords   TEXT    NOT NULL,
+                fresh_mode INTEGER DEFAULT 0,
+                started_at TEXT    NOT NULL,
+                ended_at   TEXT,
+                status     TEXT    DEFAULT 'running'
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_monitor_batches_open ON monitor_batches(batch_key, ended_at)",
             """CREATE TABLE IF NOT EXISTS threads (
                 id           TEXT PRIMARY KEY,
                 source_id    INTEGER REFERENCES sources(id),
@@ -479,6 +579,25 @@ class SentimentDB:
                 report     TEXT,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )""",
+            """CREATE TABLE IF NOT EXISTS daily_snapshots (
+                id                SERIAL PRIMARY KEY,
+                snapshot_date     TEXT    NOT NULL,
+                keyword           TEXT    NOT NULL,
+                snapshot_at       TEXT    NOT NULL,
+                risk_score        INTEGER DEFAULT 0,
+                article_count     INTEGER DEFAULT 0,
+                pos_count         INTEGER DEFAULT 0,
+                neu_count         INTEGER DEFAULT 0,
+                neg_count         INTEGER DEFAULT 0,
+                high_risk_count   INTEGER DEFAULT 0,
+                avg_score         REAL    DEFAULT 0,
+                channel_breakdown TEXT,
+                top_themes        TEXT,
+                dashboard_summary TEXT,
+                payload_json      TEXT,
+                UNIQUE(snapshot_date, keyword)
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date ON daily_snapshots(snapshot_date)",
         ]
 
     # ── 共用 SQL helper ──────────────────────────────────────
@@ -564,6 +683,109 @@ class SentimentDB:
             c = conn.cursor()
             c.execute("SELECT * FROM sources WHERE is_active = 1")
             return self._adapter.fetchall_dict(c)
+        finally:
+            conn.close()
+
+    def _today_str(self) -> str:
+        return datetime.now().strftime("%Y-%m-%d")
+
+    def _json_dumps(self, value: Any) -> str:
+        return json.dumps(value, ensure_ascii=False)
+
+    def _upsert_sql(self, table: str, columns: List[str], conflict_cols: List[str], update_cols: List[str]) -> str:
+        ph = self._ph()
+        cols_str = ", ".join(columns)
+        vals_str = ", ".join([ph] * len(columns))
+        if self._adapter.is_postgres:
+            updates = ", ".join(f"{col} = EXCLUDED.{col}" for col in update_cols)
+            conflicts = ", ".join(conflict_cols)
+            return (
+                f"INSERT INTO {table} ({cols_str}) VALUES ({vals_str}) "
+                f"ON CONFLICT ({conflicts}) DO UPDATE SET {updates}"
+            )
+        return f"INSERT OR REPLACE INTO {table} ({cols_str}) VALUES ({vals_str})"
+
+    # ── Monitor Batch ────────────────────────────────────────
+    def create_monitor_batch(self, keywords: List[str], fresh_mode: bool = False, batch_key: str = "default") -> int:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            now = datetime.now().isoformat()
+            c.execute(
+                f"INSERT INTO monitor_batches (batch_key, keywords, fresh_mode, started_at, status) VALUES ({ph},{ph},{ph},{ph},{ph})",
+                (batch_key, self._json_dumps(keywords), int(fresh_mode), now, "running"),
+            )
+            batch_id = self._adapter.last_insert_id(c)
+            conn.commit()
+            return batch_id
+        finally:
+            conn.close()
+
+    def close_monitor_batch(self, batch_id: int, status: str = "completed") -> None:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"UPDATE monitor_batches SET ended_at={ph}, status={ph} WHERE id={ph}",
+                (datetime.now().isoformat(), status, batch_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def close_stale_monitor_batches(self, batch_key: str = "default", older_than_minutes: int = 180) -> int:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"SELECT id, started_at FROM monitor_batches WHERE batch_key = {ph} AND ended_at IS NULL",
+                (batch_key,),
+            )
+            rows = self._adapter.fetchall_dict(c)
+            if not rows:
+                return 0
+
+            now = datetime.now()
+            closed = 0
+            for row in rows:
+                try:
+                    started_at = datetime.fromisoformat(row["started_at"])
+                except Exception:
+                    started_at = now - timedelta(days=1)
+                if (now - started_at) < timedelta(minutes=older_than_minutes):
+                    continue
+                c.execute(
+                    f"UPDATE monitor_batches SET ended_at={ph}, status={ph} WHERE id={ph}",
+                    (now.isoformat(), "stale", row["id"]),
+                )
+                closed += 1
+            conn.commit()
+            return closed
+        finally:
+            conn.close()
+
+    def get_active_monitor_batch(self, batch_key: str = "default", max_age_minutes: int = 180) -> Optional[Dict]:
+        self.close_stale_monitor_batches(batch_key=batch_key, older_than_minutes=max_age_minutes)
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"SELECT * FROM monitor_batches WHERE batch_key = {ph} AND ended_at IS NULL ORDER BY started_at DESC LIMIT 1",
+                (batch_key,),
+            )
+            row = c.fetchone()
+            data = self._adapter.fetchone_dict(c, row)
+            if not data:
+                return None
+            try:
+                data["keywords"] = json.loads(data.get("keywords") or "[]")
+            except Exception:
+                data["keywords"] = []
+            return data
         finally:
             conn.close()
 
@@ -726,6 +948,296 @@ class SentimentDB:
             )
             row = c.fetchone()
             return self._adapter.fetchone_dict(c, row)
+        finally:
+            conn.close()
+
+    def get_dashboard_day_summary(self, snapshot_date: str = None, keywords: Optional[List[str]] = None) -> Dict[str, Any]:
+        snapshot_date = snapshot_date or self._today_str()
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            sql = f"SELECT * FROM monitoring_runs WHERE ended_at IS NOT NULL AND SUBSTR(started_at, 1, 10) = {ph}"
+            params: List[Any] = [snapshot_date]
+            if keywords:
+                placeholders = ",".join([ph] * len(keywords))
+                sql += f" AND keyword IN ({placeholders})"
+                params.extend(keywords)
+            sql += " ORDER BY started_at ASC"
+            c.execute(sql, tuple(params))
+            runs = self._adapter.fetchall_dict(c)
+
+            active_batch = self.get_active_monitor_batch()
+            if not runs:
+                return {
+                    "snapshot_date": snapshot_date,
+                    "updated_at": None,
+                    "active_batch": active_batch,
+                    "brand_map": {},
+                    "channel_counts": {"google_news": 0, "ptt": 0, "dcard": 0, "youtube": 0},
+                    "all_alerts": [],
+                    "total_articles": 0,
+                }
+
+            run_ids = [int(r["id"]) for r in runs]
+            latest_run_by_keyword = {}
+            for run in runs:
+                latest_run_by_keyword[run["keyword"]] = run
+
+            run_placeholders = ",".join([ph] * len(run_ids))
+            c.execute(
+                f"""SELECT a.thread_id, a.run_id, a.sentiment, a.score, a.theme, a.reason,
+                           a.voice_source, a.analyzed_with, a.model_used, a.analyzed_at,
+                           t.title, t.url, t.channel, t.board, t.published_at,
+                           t.push_count, t.boo_count, t.neutral_count, t.comment_count,
+                           r.keyword
+                    FROM analyses a
+                    JOIN threads t ON a.thread_id = t.id
+                    JOIN monitoring_runs r ON a.run_id = r.id
+                    WHERE a.run_id IN ({run_placeholders})""",
+                tuple(run_ids),
+            )
+            analysis_rows = [self._normalize_analysis_row(row) for row in self._adapter.fetchall_dict(c)]
+
+            c.execute(
+                f"""SELECT ia.thread_item_id, ia.run_id, ia.sentiment, ia.score, ia.theme, ia.reason,
+                           ia.voice_source, ia.analyzed_with, ia.model_used, ia.analyzed_at,
+                           ti.content, ti.author, ti.platform_item_id, t.channel, t.title, t.url,
+                           r.keyword
+                    FROM item_analyses ia
+                    JOIN thread_items ti ON ia.thread_item_id = ti.id
+                    JOIN threads t ON ti.thread_id = t.id
+                    JOIN monitoring_runs r ON ia.run_id = r.id
+                    WHERE ia.run_id IN ({run_placeholders})""",
+                tuple(run_ids),
+            )
+            item_analysis_rows = [self._normalize_analysis_row(row) for row in self._adapter.fetchall_dict(c)]
+
+            c.execute(
+                f"""SELECT pr.*
+                    FROM pr_reports pr
+                    WHERE pr.run_id IN ({run_placeholders})
+                    ORDER BY pr.created_at ASC""",
+                tuple(run_ids),
+            )
+            pr_rows = self._adapter.fetchall_dict(c)
+        finally:
+            conn.close()
+
+        analyses_by_key: Dict[Tuple[str, str], Dict[str, Any]] = {}
+        for row in analysis_rows:
+            key = (row["keyword"], row["thread_id"])
+            prev = analyses_by_key.get(key)
+            if prev is None or (row.get("analyzed_at") or "") >= (prev.get("analyzed_at") or ""):
+                analyses_by_key[key] = row
+
+        items_by_key: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        for row in item_analysis_rows:
+            key = (row["keyword"], row["thread_item_id"])
+            prev = items_by_key.get(key)
+            if prev is None or (row.get("analyzed_at") or "") >= (prev.get("analyzed_at") or ""):
+                items_by_key[key] = row
+
+        pr_by_keyword: Dict[str, Dict[str, Any]] = {}
+        latest_run_id_map = {kw: int(run["id"]) for kw, run in latest_run_by_keyword.items()}
+        for row in pr_rows:
+            keyword = row.get("keyword")
+            if keyword and latest_run_id_map.get(keyword) == row.get("run_id"):
+                pr_by_keyword[keyword] = row
+
+        brand_map: Dict[str, Dict[str, Any]] = {}
+        channel_counts = {"google_news": 0, "ptt": 0, "dcard": 0, "youtube": 0}
+        unique_today_threads = set()
+        seen_global_alerts = set()
+        all_alerts: List[Dict[str, Any]] = []
+
+        for row in analyses_by_key.values():
+            kw = row["keyword"]
+            brand = brand_map.setdefault(
+                kw,
+                {
+                    "keyword": kw,
+                    "pos": 0,
+                    "neu": 0,
+                    "neg": 0,
+                    "total": 0,
+                    "scores": [],
+                    "analyses": [],
+                    "itemAnalyses": [],
+                    "alerts": [],
+                    "pr": None,
+                    "dashboardSummary": None,
+                    "lastRunId": latest_run_id_map.get(kw),
+                },
+            )
+            brand["total"] += 1
+            sentiment = row.get("sentiment")
+            if sentiment == "正面":
+                brand["pos"] += 1
+            elif sentiment == "負面":
+                brand["neg"] += 1
+            else:
+                brand["neu"] += 1
+            brand["scores"].append(row["score"])
+            brand["analyses"].append(row)
+
+            thread_id = row["thread_id"]
+            if thread_id not in unique_today_threads:
+                unique_today_threads.add(thread_id)
+                channel = row.get("channel")
+                if channel in channel_counts:
+                    channel_counts[channel] += 1
+
+            if row.get("sentiment") == "負面" and row.get("score", 0) >= 3:
+                alert = {
+                    "brand": kw,
+                    "channel": row.get("channel") or "",
+                    "title": row.get("title") or "—",
+                    "url": row.get("url") or "#",
+                    "score": row.get("score") or 0,
+                    "theme": row.get("theme") or "—",
+                    "published": row.get("published_at") or "",
+                    "thread_id": thread_id,
+                }
+                brand["alerts"].append(alert)
+                if thread_id not in seen_global_alerts:
+                    seen_global_alerts.add(thread_id)
+                    all_alerts.append(alert)
+
+        for row in items_by_key.values():
+            kw = row["keyword"]
+            brand = brand_map.setdefault(
+                kw,
+                {
+                    "keyword": kw,
+                    "pos": 0,
+                    "neu": 0,
+                    "neg": 0,
+                    "total": 0,
+                    "scores": [],
+                    "analyses": [],
+                    "itemAnalyses": [],
+                    "alerts": [],
+                    "pr": None,
+                    "dashboardSummary": None,
+                    "lastRunId": latest_run_id_map.get(kw),
+                },
+            )
+            brand["itemAnalyses"].append(row)
+
+        for kw, brand in brand_map.items():
+            pr_row = pr_by_keyword.get(kw)
+            if pr_row:
+                brand["pr"] = pr_row.get("report")
+                brand["dashboardSummary"] = pr_row.get("dashboard_summary")
+
+        updated_at = max((run.get("ended_at") or run.get("started_at") or "") for run in runs)
+
+        return {
+            "snapshot_date": snapshot_date,
+            "updated_at": updated_at,
+            "active_batch": active_batch,
+            "brand_map": brand_map,
+            "channel_counts": channel_counts,
+            "all_alerts": sorted(all_alerts, key=lambda row: row.get("score", 0), reverse=True),
+            "total_articles": len(unique_today_threads),
+        }
+
+    def save_daily_snapshots(self, snapshot_date: str = None, keywords: Optional[List[str]] = None) -> int:
+        snapshot_date = snapshot_date or self._today_str()
+        summary = self.get_dashboard_day_summary(snapshot_date=snapshot_date, keywords=keywords)
+        brand_map = summary.get("brand_map") or {}
+        if not brand_map:
+            return 0
+
+        columns = [
+            "snapshot_date", "keyword", "snapshot_at", "risk_score", "article_count",
+            "pos_count", "neu_count", "neg_count", "high_risk_count", "avg_score",
+            "channel_breakdown", "top_themes", "dashboard_summary", "payload_json",
+        ]
+        update_cols = columns[2:]
+        sql = self._upsert_sql("daily_snapshots", columns, ["snapshot_date", "keyword"], update_cols)
+
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            written = 0
+            for keyword, brand in brand_map.items():
+                total = max(int(brand.get("total", 0)), 1)
+                negative_count = int(brand.get("neg", 0))
+                scores = list(brand.get("scores", []))
+                channel_breakdown: Dict[str, int] = {}
+                for item in brand.get("analyses", []):
+                    channel = item.get("channel")
+                    if channel:
+                        channel_breakdown[channel] = channel_breakdown.get(channel, 0) + 1
+                top_themes = []
+                theme_counts: Dict[str, int] = {}
+                for item in brand.get("analyses", []):
+                    theme = item.get("theme")
+                    if theme:
+                        theme_counts[theme] = theme_counts.get(theme, 0) + 1
+                top_themes = [theme for theme, _ in sorted(theme_counts.items(), key=lambda pair: pair[1], reverse=True)[:3]]
+                avg_score = round(sum(scores) / max(len(scores), 1), 2) if scores else 0
+                high_risk_count = len([a for a in brand.get("alerts", []) if a.get("score", 0) >= 4])
+                negative_ratio = negative_count / total
+                volume_score = min(35, negative_ratio * 35 + min(negative_count, 8) * 4)
+                severity_score = min(45, high_risk_count * 12 + len([a for a in brand.get("alerts", []) if a.get("score", 0) == 3]) * 6 + avg_score * 5)
+                spread_score = min(20, len(channel_breakdown) * 7 + (8 if {"youtube", "ptt"}.issubset(set(channel_breakdown.keys())) else 0))
+                risk_score = int(round(min(100, volume_score + severity_score + spread_score)))
+                payload = {
+                    "keyword": keyword,
+                    "snapshot_date": snapshot_date,
+                    "updated_at": summary.get("updated_at"),
+                    "brand": brand,
+                }
+                row_values = (
+                    snapshot_date,
+                    keyword,
+                    datetime.now().isoformat(),
+                    risk_score,
+                    brand.get("total", 0),
+                    brand.get("pos", 0),
+                    brand.get("neu", 0),
+                    brand.get("neg", 0),
+                    high_risk_count,
+                    avg_score,
+                    self._json_dumps(channel_breakdown),
+                    self._json_dumps(top_themes),
+                    brand.get("dashboardSummary"),
+                    self._json_dumps(payload),
+                )
+                c.execute(sql, row_values)
+                written += 1
+            conn.commit()
+            return written
+        finally:
+            conn.close()
+
+    def get_daily_snapshots(self, limit: int = 31, keyword: Optional[str] = None) -> List[Dict]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            if keyword:
+                c.execute(
+                    f"SELECT * FROM daily_snapshots WHERE keyword = {ph} ORDER BY snapshot_date DESC LIMIT {ph}",
+                    (keyword, limit),
+                )
+            else:
+                c.execute(
+                    "SELECT * FROM daily_snapshots ORDER BY snapshot_date DESC, keyword ASC LIMIT " + ph,
+                    (limit,),
+                )
+            rows = self._adapter.fetchall_dict(c)
+            for row in rows:
+                for field in ("channel_breakdown", "top_themes", "payload_json"):
+                    if row.get(field):
+                        try:
+                            row[field] = json.loads(row[field])
+                        except Exception:
+                            pass
+            return rows
         finally:
             conn.close()
 

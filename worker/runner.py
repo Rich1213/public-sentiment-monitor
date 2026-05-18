@@ -288,6 +288,7 @@ def run_all_brands(
     keywords: list = None,
     fresh_mode: bool = False,
     print_banner: bool = False,
+    batch_id: int = None,
 ) -> None:
     """
     遍歷所有指定品牌，依序執行完整監控流程。
@@ -308,9 +309,13 @@ def run_all_brands(
     from src.notifiers.telegram_notifier import TelegramNotifier
 
     db       = SentimentDB()
+    db.close_stale_monitor_batches()
     cleaned  = db.close_open_runs(keywords=keywords, older_than_minutes=30)
     analyzer = SentimentAnalyzer()
     advisor  = PRAdvisor()
+
+    if batch_id is None:
+        batch_id = db.create_monitor_batch(keywords=keywords, fresh_mode=fresh_mode)
 
     try:
         notifier = TelegramNotifier()
@@ -329,31 +334,44 @@ def run_all_brands(
         print(f"  重新採集：{'是（忽略去重）' if fresh_mode else '否（跳過已採集）'}")
         print(f"  執行時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-    for idx, keyword in enumerate(keywords):
-        if idx > 0:
-            print(f"\n  ⏳ 品牌間冷卻 {INTER_BRAND_COOLDOWN}s（保護 NVIDIA API 速率限制）...")
-            time.sleep(INTER_BRAND_COOLDOWN)
-        try:
-            run_monitor(
-                keyword=keyword,
-                db=db,
-                analyzer=analyzer,
-                advisor=advisor,
-                notifier=notifier,
-                fresh_mode=fresh_mode,
-            )
-        except KeyboardInterrupt:
-            print("\n\n  ⛔ 使用者中斷，結束監控。")
-            sys.exit(0)
-        except Exception as e:
-            print(f"\n  ❌ {keyword} 監控發生錯誤：{e}")
-            import traceback
-            traceback.print_exc()
+    batch_status = "completed"
+    try:
+        for idx, keyword in enumerate(keywords):
+            if idx > 0:
+                print(f"\n  ⏳ 品牌間冷卻 {INTER_BRAND_COOLDOWN}s（保護 NVIDIA API 速率限制）...")
+                time.sleep(INTER_BRAND_COOLDOWN)
+            try:
+                run_monitor(
+                    keyword=keyword,
+                    db=db,
+                    analyzer=analyzer,
+                    advisor=advisor,
+                    notifier=notifier,
+                    fresh_mode=fresh_mode,
+                )
+            except KeyboardInterrupt:
+                batch_status = "cancelled"
+                print("\n\n  ⛔ 使用者中斷，結束監控。")
+                sys.exit(0)
+            except Exception as e:
+                print(f"\n  ❌ {keyword} 監控發生錯誤：{e}")
+                import traceback
+                traceback.print_exc()
 
-    _print_sep("═")
-    print(f"  ✅ 本次監控完成｜{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    _print_sep("═")
-    print()
+        db.save_daily_snapshots()
+        _print_sep("═")
+        print(f"  ✅ 本次監控完成｜{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        _print_sep("═")
+        print()
+    except Exception:
+        batch_status = "failed"
+        raise
+    finally:
+        if batch_id is not None:
+            try:
+                db.close_monitor_batch(batch_id, status=batch_status)
+            except Exception as e:
+                logger.error("關閉 monitor batch 失敗 [%s]：%s", batch_id, e, exc_info=True)
 
 
 # ─────────────────────────────────────────────────────────────
