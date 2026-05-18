@@ -257,6 +257,8 @@ function processRuns(runs) {
   const channelCounts = { google_news: 0, ptt: 0, dcard: 0 };
   let totalAlerts = 0, totalArticles = 0;
   allAlerts = [];
+  const seenArticles = new Set(); // 標題去重，避免多 keyword run 重複計算同一篇
+  const seenAlerts = new Set();   // 警報表去重
 
   runs.forEach(run => {
     const kw = run.keyword || '未知';
@@ -265,6 +267,11 @@ function processRuns(runs) {
 
     if (run.analyses) {
       run.analyses.forEach(a => {
+        const articleKey = `${a.channel}:${a.title}`;
+        const isDup = seenArticles.has(articleKey);
+        if (!isDup) seenArticles.add(articleKey);
+
+        // 品牌計數仍各自累計（同篇文章可被不同品牌 run 分析）
         totalArticles++;
         bm.total++;
         const s = a.sentiment;
@@ -273,15 +280,19 @@ function processRuns(runs) {
         else bm.neu++;
         bm.scores.push(a.score || 0);
         const ch = a.channel || '';
-        if (ch in channelCounts) channelCounts[ch]++;
+        if (ch in channelCounts && !isDup) channelCounts[ch]++;
 
         if ((a.score || 0) >= 0.7 && s === '負面') {
-          totalAlerts++;
-          allAlerts.push({
-            brand: kw, channel: ch, title: a.title || '—',
-            url: a.url || '#', score: a.score, theme: a.theme || '—',
-            published: a.published_at || ''
-          });
+          const alertKey = `${ch}:${a.title}`;
+          if (!seenAlerts.has(alertKey)) {
+            seenAlerts.add(alertKey);
+            totalAlerts++;
+            allAlerts.push({
+              brand: kw, channel: ch, title: a.title || '—',
+              url: a.url || '#', score: a.score, theme: a.theme || '—',
+              published: a.published_at || ''
+            });
+          }
         }
       });
     }
