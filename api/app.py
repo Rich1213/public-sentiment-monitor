@@ -108,7 +108,7 @@ def trigger_monitor(req: MonitorRequest, background_tasks: BackgroundTasks):
     - **keywords**: 指定監控品牌，不填則監控全部四大品牌
     - **fresh**: true = 強制重新採集（忽略去重）
     """
-    default_kws = ["7-ELEVEN", "全家", "萊爾富", "OK mart"]
+    default_kws = ["7-ELEVEN", "全家", "萊爾富", "OK mart", "超商食安"]
     env_kws_str = os.getenv("MONITOR_KEYWORDS", "")
     env_kws = [k.strip() for k in env_kws_str.split(",") if k.strip()]
 

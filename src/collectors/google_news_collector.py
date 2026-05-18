@@ -111,14 +111,27 @@ class GoogleNewsCollector:
         narrative_counts: Dict[str, int] = {}
         skipped_dup = 0
 
+        from src.config.brands import get_brand_config
+        brand_config = get_brand_config(self.keyword)
+        crisis_bypass = brand_config.get("crisis_bypass", False)
+
         for item in raw_news:
             if len(articles) >= limit:
                 break
 
             # 品牌相關性驗證
             if not is_brand_relevant(self.keyword, item["title"], item["summary"]):
-                print(f"  [Google News] 跳過無關：{item['title'][:45]}...")
-                continue
+                # crisis_bypass：若為食安危機類型，寬鬆放行（Google News 已透過搜尋詞篩選）
+                if crisis_bypass:
+                    narrative_type_check = classify_narrative(item["title"], item["summary"])
+                    if narrative_type_check == "危機曝光":
+                        print(f"  [Google News] 危機寬鬆放行：{item['title'][:45]}...")
+                    else:
+                        print(f"  [Google News] 跳過無關：{item['title'][:45]}...")
+                        continue
+                else:
+                    print(f"  [Google News] 跳過無關：{item['title'][:45]}...")
+                    continue
 
             # 去重（Google News redirect URL 每次不同，改用標題去重）
             title_key = f"gnews_title:{self.keyword}:{item['title']}"

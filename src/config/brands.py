@@ -30,54 +30,77 @@ BRANDS: Dict[str, dict] = {
     "7-ELEVEN": {
         "display_name": "7-ELEVEN（統一超商）",
         "search_queries": {
-            "google_news": "7-ELEVEN OR 統一超商 OR 7-11便利商店",
-            "ptt":         "7-11 OR 統一超商 OR 小七",
-            "dcard":       "7-ELEVEN OR 統一超商 OR 小七 OR 711",
+            # 加入 bare "7-11" 和食安危機關鍵詞組合
+            "google_news": '7-ELEVEN OR 統一超商 OR "7-11" OR 小七 OR (統一超商 食安) OR (7-11 食品) OR (小七 食安)',
+            "ptt":         "7-11 OR 統一超商 OR 小七 OR 7ELEVEN",
+            "dcard":       "7-ELEVEN OR 統一超商 OR 小七 OR 711 OR 7-11",
         },
         "validation_keywords": [
             "7-eleven", "7-11", "7eleven", "711",
             "統一超商", "小七", "seven eleven",
         ],
+        # 食安危機標題通常不含品牌名，改用 RSS summary 比對即可
+        # is_brand_relevant 失敗時，若 narrative_type=危機曝光 則寬鬆放行
+        "crisis_bypass": True,
         "exclude_keywords": _DCARD_EXCLUDE,
     },
 
     "全家": {
         "display_name": "全家 FamilyMart",
         "search_queries": {
-            "google_news": "全家便利商店 OR FamilyMart台灣 OR 全家超商",
-            "ptt":         "全家便利 OR FamilyMart OR 全家超商",
-            "dcard":       "全家便利 OR FamilyMart OR 全家超商",
+            "google_news": '全家便利商店 OR FamilyMart台灣 OR 全家超商 OR (全家 食安) OR (全家 食品安全)',
+            "ptt":         "全家便利 OR FamilyMart OR 全家超商 OR 全家超市",
+            "dcard":       "全家便利 OR FamilyMart OR 全家超商 OR 全家便利店",
         },
         "validation_keywords": [
             "全家便利", "familymart", "全家超商",
-            "全家店", "fmc", "全家fp",
+            "全家店", "fmc", "全家fp", "全家超市",
         ],
+        "crisis_bypass": True,
         "exclude_keywords": _DCARD_EXCLUDE,
     },
 
     "萊爾富": {
         "display_name": "萊爾富 Hi-Life",
         "search_queries": {
-            "google_news": "萊爾富 OR Hi-Life便利商店",
-            "ptt":         "萊爾富 OR Hi-Life",
-            "dcard":       "萊爾富 OR hilife",
+            "google_news": '萊爾富 OR Hi-Life便利商店 OR (萊爾富 食安)',
+            "ptt":         "萊爾富 OR Hi-Life OR hilife",
+            "dcard":       "萊爾富 OR hilife OR hi-life",
         },
         "validation_keywords": [
             "萊爾富", "hi-life", "hilife", "hi life",
         ],
+        "crisis_bypass": True,
         "exclude_keywords": _DCARD_EXCLUDE,
     },
 
     "OK mart": {
         "display_name": "OK mart",
         "search_queries": {
-            "google_news": "OK mart OR OK超商 台灣",
-            "ptt":         "OK超商 OR OKmart OR OK mart",
-            "dcard":       "OK mart OR OK超商",
+            "google_news": 'OK mart OR OK超商 台灣 OR (OK超商 食安)',
+            "ptt":         "OK超商 OR OKmart OR OK mart OR OK便利",
+            "dcard":       "OK mart OR OK超商 OR okmart",
         },
         "validation_keywords": [
             "ok mart", "ok超商", "okmart", "ok便利", "來來超商",
         ],
+        "crisis_bypass": True,
+        "exclude_keywords": _DCARD_EXCLUDE,
+    },
+
+    # ── 跨品牌食安危機監控（不限定特定品牌）────────────────────
+    "超商食安": {
+        "display_name": "超商食安危機監控",
+        "search_queries": {
+            "google_news": "超商 食安 OR 超商 異物 OR 超商 食品安全 OR 超商 活蟲 OR 超商 食品問題 OR 超商 下架 OR 超商 食物中毒",
+            "ptt":         "超商食安 OR 超商異物 OR 超商蟲",
+            "dcard":       "超商食安 OR 超商異物 OR 超商食品問題",
+        },
+        "validation_keywords": [
+            "超商", "便利商店", "7-11", "全家", "萊爾富", "ok mart",
+            "統一超商", "小七", "familymart",
+        ],
+        "crisis_bypass": True,
         "exclude_keywords": _DCARD_EXCLUDE,
     },
 }
