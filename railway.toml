@@ -2,7 +2,7 @@
 # 文件：https://docs.railway.app/reference/config-as-code
 
 [build]
-builder = "NIXPACKS"
+builder = "RAILPACK"
 
 # ── Web 服務（FastAPI）────────────────────────────────────────
 [deploy]
