@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime
 
 from src.utils.db_manager import SentimentDB
 
@@ -75,6 +76,11 @@ class DashboardTodayTest(unittest.TestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["article_count"], 1)
         self.assertGreaterEqual(rows[0]["risk_score"], 1)
+
+    def test_json_dumps_supports_datetime_payloads(self):
+        payload = {"when": datetime(2026, 5, 18, 23, 59, 0)}
+        text = self.db._json_dumps(payload)
+        self.assertIn("2026-05-18T23:59:00", text)
 
 
 if __name__ == "__main__":

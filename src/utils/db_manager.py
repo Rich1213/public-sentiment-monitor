@@ -183,6 +183,8 @@ class DBAdapter:
 # SentimentDB
 # ─────────────────────────────────────────────────────────────
 class SentimentDB:
+    _initialized_targets = set()
+
     def __init__(self, db_path: str = None):
         self._adapter = DBAdapter()
 
@@ -190,13 +192,21 @@ class SentimentDB:
         if db_path is not None and not self._adapter.is_postgres:
             self._adapter._sqlite_path = db_path
 
-        self._init_db()
-        self._ensure_schema_migrations()
-        self._seed_sources()
+        target_key = self._target_key()
+        if target_key not in self.__class__._initialized_targets:
+            self._init_db()
+            self._ensure_schema_migrations()
+            self._seed_sources()
+            self.__class__._initialized_targets.add(target_key)
 
     @property
     def adapter(self) -> DBAdapter:
         return self._adapter
+
+    def _target_key(self) -> Tuple[str, str]:
+        if self._adapter.is_postgres:
+            return ("postgres", self._adapter._database_url)
+        return ("sqlite", self._adapter._sqlite_path)
 
     # ── Schema 建立 ──────────────────────────────────────────
     def _init_db(self):
@@ -690,7 +700,12 @@ class SentimentDB:
         return datetime.now().strftime("%Y-%m-%d")
 
     def _json_dumps(self, value: Any) -> str:
-        return json.dumps(value, ensure_ascii=False)
+        def _default(obj: Any):
+            if hasattr(obj, "isoformat"):
+                return obj.isoformat()
+            return str(obj)
+
+        return json.dumps(value, ensure_ascii=False, default=_default)
 
     def _upsert_sql(self, table: str, columns: List[str], conflict_cols: List[str], update_cols: List[str]) -> str:
         ph = self._ph()
