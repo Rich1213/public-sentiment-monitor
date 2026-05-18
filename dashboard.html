@@ -66,9 +66,12 @@
   .alert-table th { text-align: left; padding: 8px 10px; color: #475569; font-weight: 500; border-bottom: 1px solid #2d3148; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
   .alert-table td { padding: 10px; border-bottom: 1px solid #1e2235; color: #cbd5e1; vertical-align: middle; }
   .alert-table tr:hover td { background: #1e2235; }
-  .score-badge { display: inline-block; padding: 2px 7px; border-radius: 4px; font-weight: 600; font-size: 11px; }
-  .score-high { background: #450a0a; color: #fca5a5; }
-  .score-mid { background: #431407; color: #fdba74; }
+  .score-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 6px; font-weight: 700; font-size: 12px; white-space: nowrap; }
+  .score-5 { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; }
+  .score-4 { background: #431407; color: #fdba74; border: 1px solid #7c2d12; }
+  .score-3 { background: #422006; color: #fcd34d; border: 1px solid #78350f; }
+  .score-2 { background: #1e2a1e; color: #86efac; border: 1px solid #14532d; }
+  .score-1 { background: #1e2235; color: #94a3b8; border: 1px solid #2d3148; }
   .ch-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; background: #1e2235; color: #7c3aed; border: 1px solid #3d2e6b; }
   .article-link { color: #818cf8; text-decoration: none; }
   .article-link:hover { color: #a5b4fc; text-decoration: underline; }
@@ -151,7 +154,7 @@
   <div style="margin-bottom:6px" class="section-header"><span class="zone-badge">1</span> 今日概況</div>
   <div class="grid-4" id="kpi-grid">
     <div class="card"><div class="card-title">PR 軌道</div><div id="kpi-track">—</div></div>
-    <div class="card"><div class="card-title">高強度警報</div><div class="kpi-val" id="kpi-alerts">—</div><div class="kpi-sub">強度 ≥ 0.7</div></div>
+    <div class="card"><div class="card-title">公關風險警報</div><div class="kpi-val" id="kpi-alerts">—</div><div class="kpi-sub">風險等級 ≥ 3 級</div></div>
     <div class="card"><div class="card-title">分析文章數</div><div class="kpi-val" id="kpi-articles">—</div><div class="kpi-sub">本次執行</div></div>
     <div class="card"><div class="card-title">主目標品牌</div><div class="kpi-val" style="font-size:18px; margin-top:4px" id="kpi-brand">7-ELEVEN</div><div class="kpi-sub" id="kpi-sentiment-avg">平均情緒強度 —</div></div>
   </div>
@@ -300,7 +303,8 @@ function processRuns(runs) {
         const ch = a.channel || '';
         if (ch in channelCounts && !isDup) channelCounts[ch]++;
 
-        if ((a.score || 0) >= 0.7 && s === '負面') {
+        // 警報門檻：公關風險 >= 3 且負面
+        if ((a.score || 0) >= 3 && s === '負面') {
           const alertKey = `${ch}:${a.title}`;
           if (!seenAlerts.has(alertKey)) {
             seenAlerts.add(alertKey);
@@ -452,17 +456,25 @@ function renderAlertTable(alerts) {
 
   wrap.innerHTML = `<table class="alert-table">
     <thead><tr>
-      <th>品牌</th><th>渠道</th><th>標題</th><th>強度</th><th>主題</th><th>時間</th>
+      <th>品牌</th><th>渠道</th><th>標題</th><th>公關風險</th><th>主題</th><th>時間</th>
     </tr></thead>
     <tbody>${alerts.slice(0, 20).map(a => {
-      const scoreClass = a.score >= 0.9 ? 'score-high' : 'score-mid';
+      const sc = Math.round(a.score) || 1;
+      const scoreMap = {
+        5: { cls: 'score-5', icon: '🔥', label: '5 危機' },
+        4: { cls: 'score-4', icon: '🚨', label: '4 嚴重' },
+        3: { cls: 'score-3', icon: '⚠️', label: '3 關注' },
+        2: { cls: 'score-2', icon: '📋', label: '2 留意' },
+        1: { cls: 'score-1', icon: '✅', label: '1 安全' },
+      };
+      const { cls, icon, label } = scoreMap[sc] || scoreMap[3];
       const ch = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', youtube: 'YouTube' }[a.channel] || a.channel;
       const date = a.published ? a.published.slice(0, 10) : '—';
       return `<tr>
         <td style="color:#e2e8f0; font-weight:500">${a.brand}</td>
         <td><span class="ch-badge">${ch}</span></td>
         <td><a class="article-link" href="${a.url}" target="_blank" rel="noopener">${(a.title || '').slice(0, 45)}${a.title && a.title.length > 45 ? '…' : ''}</a></td>
-        <td><span class="score-badge ${scoreClass}">${typeof a.score === 'number' ? a.score.toFixed(1) : '—'}</span></td>
+        <td><span class="score-badge ${cls}">${icon} ${label}</span></td>
         <td style="color:#64748b">${a.theme}</td>
         <td style="color:#475569">${date}</td>
       </tr>`;
