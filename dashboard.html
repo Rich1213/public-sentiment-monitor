@@ -231,7 +231,7 @@ const API = 'https://web-production-7a3df.up.railway.app';
 const BRANDS = ['7-ELEVEN', '全家', '萊爾富', 'OK mart'];
 const CH_COLORS = { google_news: '#818cf8', ptt: '#34d399', dcard: '#fb923c', youtube: '#f87171' };
 const BRAND_COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6'];
-const { normalizeScore, buildPrimarySummary } = window.DashboardSummary;
+const { normalizeScore, buildPrimarySummary, getArticleRiskBadge, deriveProgressState, inferBatchStart } = window.DashboardSummary;
 
 let allAlerts = [];
 let trendChart = null;
@@ -476,21 +476,14 @@ function renderAlertTable(alerts) {
     </tr></thead>
     <tbody>${alerts.slice(0, 20).map(a => {
       const sc = Math.round(a.score) || 1;
-      const scoreMap = {
-        5: { cls: 'score-5', icon: '🔥', label: '5 危機' },
-        4: { cls: 'score-4', icon: '🚨', label: '4 嚴重' },
-        3: { cls: 'score-3', icon: '⚠️', label: '3 關注' },
-        2: { cls: 'score-2', icon: '📋', label: '2 留意' },
-        1: { cls: 'score-1', icon: '✅', label: '1 安全' },
-      };
-      const { cls, icon, label } = scoreMap[sc] || scoreMap[3];
+      const { cls, icon, label } = getArticleRiskBadge(sc);
       const ch = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', youtube: 'YouTube' }[a.channel] || a.channel;
       const date = a.published ? a.published.slice(0, 10) : '—';
       return `<tr>
         <td style="color:#e2e8f0; font-weight:500">${a.brand}</td>
         <td><span class="ch-badge">${ch}</span></td>
         <td><a class="article-link" href="${a.url}" target="_blank" rel="noopener">${(a.title || '').slice(0, 45)}${a.title && a.title.length > 45 ? '…' : ''}</a></td>
-        <td><span class="score-badge ${cls}">${icon} ${label}</span></td>
+        <td><span class="score-badge ${cls}">${icon} ${sc} ${label}</span></td>
         <td style="color:#64748b">${a.theme}</td>
         <td style="color:#475569">${date}</td>
       </tr>`;
@@ -550,24 +543,6 @@ function setMonitorTriggeredAt(isoString) {
   else localStorage.removeItem(MONITOR_PROGRESS_KEY);
 }
 
-function inferBatchStart(runs) {
-  const monitorRuns = runs
-    .filter(r => MONITOR_KEYWORDS.includes(r.keyword))
-    .sort((a, b) => new Date(a.started_at) - new Date(b.started_at));
-
-  if (monitorRuns.length === 0) return null;
-
-  const batch = [monitorRuns[monitorRuns.length - 1]];
-  for (let i = monitorRuns.length - 2; i >= 0; i--) {
-    const curr = new Date(batch[0].started_at);
-    const prev = new Date(monitorRuns[i].started_at);
-    const gapMinutes = (curr - prev) / 60000;
-    if (gapMinutes > 15) break;
-    batch.unshift(monitorRuns[i]);
-  }
-  return batch[0].started_at;
-}
-
 async function restoreMonitorProgress() {
   const savedTriggeredAt = localStorage.getItem(MONITOR_PROGRESS_KEY);
   if (savedTriggeredAt) setMonitorTriggeredAt(savedTriggeredAt);
@@ -580,23 +555,13 @@ async function restoreMonitorProgress() {
 
     if (activeRun) {
       if (!monitorTriggeredAt) {
-        const inferredStart = inferBatchStart(runs) || activeRun.started_at;
+        const inferredStart = inferBatchStart(runs, MONITOR_KEYWORDS) || activeRun.started_at;
         setMonitorTriggeredAt(inferredStart);
       }
       showProgressPanel();
       startProgressPoller();
       await pollMonitorProgress();
       return;
-    }
-
-    if (monitorTriggeredAt) {
-      const ageMinutes = (Date.now() - monitorTriggeredAt.getTime()) / 60000;
-      if (ageMinutes <= 30) {
-        showProgressPanel();
-        startProgressPoller();
-        await pollMonitorProgress();
-        return;
-      }
     }
   } catch (_) {
     // restore 失敗時不要阻擋主畫面載入
@@ -667,42 +632,35 @@ async function pollMonitorProgress() {
     const runs = data.runs || [];
 
     if (!monitorTriggeredAt) {
-      const inferredStart = inferBatchStart(runs);
+      const inferredStart = inferBatchStart(runs, MONITOR_KEYWORDS);
       if (inferredStart) setMonitorTriggeredAt(inferredStart);
     }
 
-    const triggeredMs = monitorTriggeredAt ? monitorTriggeredAt.getTime() : 0;
-    const newRuns = runs.filter(r => new Date(r.started_at).getTime() >= triggeredMs);
+    const state = deriveProgressState({
+      runs,
+      monitorKeywords: MONITOR_KEYWORDS,
+      triggeredAtISO: monitorTriggeredAt ? monitorTriggeredAt.toISOString() : null,
+      nowMs: Date.now(),
+    });
 
-    const activeRun  = newRuns.find(r => !r.ended_at);   // 進行中
-    const doneRuns   = newRuns.filter(r => r.ended_at);  // 已完成
-    const totalExpected = MONITOR_KEYWORDS.length;
-    const doneCount  = doneRuns.length;
+    if (!state.visible) {
+      clearInterval(monitorPoller);
+      monitorPoller = null;
+      hideProgressPanel();
+      return;
+    }
 
-    if (activeRun) {
-      // 有品牌正在跑
-      const pct = Math.round((doneCount / totalExpected) * 90) + 5;
-      const articles = doneRuns.reduce((s, r) => s + (r.articles_found || 0), 0);
-      setProgressStatus(
-        pct,
-        activeRun.keyword,
-        `正在採集「${activeRun.keyword}」· 已完成 ${doneCount} / ${totalExpected} 個品牌 · 累計 ${articles} 篇`
-      );
-      document.getElementById('progress-count').textContent = `品牌 ${doneCount + 1} / ${totalExpected}`;
-    } else if (doneCount >= totalExpected && doneCount > 0) {
-      // 全部完成
-      const totalArticles = doneRuns.reduce((s, r) => s + (r.articles_found || 0), 0);
-      setProgressStatus(100, '完成 ✓', `採集完成！共 ${totalArticles} 篇文章，重新整理資料中...`);
-      document.getElementById('progress-count').textContent = `品牌 ${doneCount} / ${totalExpected}`;
+    showProgressPanel();
+    setProgressStatus(state.pct, state.brandLabel, state.statusText);
+    document.getElementById('progress-count').textContent = state.countText;
+
+    if (state.completed) {
       clearInterval(monitorPoller);
       monitorPoller = null;
       setTimeout(() => {
         hideProgressPanel();
         loadData();
       }, 2000);
-    } else if (doneCount === 0 && newRuns.length === 0) {
-      // 還沒有新 run 出現（Railway 還在啟動）
-      setProgressStatus(5, '啟動中', '等待 Railway 背景任務啟動...');
     }
   } catch (e) {
     // 輪詢失敗不中斷，繼續等
