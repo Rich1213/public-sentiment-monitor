@@ -6,6 +6,7 @@ const {
   buildPrimarySummary,
   getArticleRiskBadge,
   deriveProgressState,
+  selectLatestCompletedRunsByKeyword,
 } = require('../dashboard_summary.js');
 
 test('normalizeScore maps legacy and integer scales', () => {
@@ -122,4 +123,17 @@ test('deriveProgressState shows active railway progress when run exists', () => 
   assert.equal(state.visible, true);
   assert.equal(state.brandLabel, '7-ELEVEN');
   assert.match(state.statusText, /正在採集/);
+});
+
+test('selectLatestCompletedRunsByKeyword keeps only the newest completed run per keyword', () => {
+  const selected = selectLatestCompletedRunsByKeyword([
+    { id: 11, keyword: '7-ELEVEN', started_at: '2026-05-18T07:00:00Z', ended_at: '2026-05-18T07:05:00Z' },
+    { id: 18, keyword: '7-ELEVEN', started_at: '2026-05-18T08:00:00Z', ended_at: '2026-05-18T08:05:00Z' },
+    { id: 23, keyword: '7-ELEVEN', started_at: '2026-05-18T09:00:00Z', ended_at: '2026-05-18T09:05:00Z' },
+    { id: 24, keyword: '全家', started_at: '2026-05-18T09:10:00Z', ended_at: '2026-05-18T09:15:00Z' },
+    { id: 25, keyword: '萊爾富', started_at: '2026-05-18T09:20:00Z', ended_at: '2026-05-18T09:25:00Z' },
+    { id: 99, keyword: '7-ELEVEN', started_at: '2026-05-18T09:30:00Z', ended_at: null },
+  ]);
+
+  assert.deepEqual(selected.map(r => r.id), [25, 24, 23]);
 });

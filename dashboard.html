@@ -231,7 +231,7 @@ const API = 'https://web-production-7a3df.up.railway.app';
 const BRANDS = ['7-ELEVEN', '全家', '萊爾富', 'OK mart'];
 const CH_COLORS = { google_news: '#818cf8', ptt: '#34d399', dcard: '#fb923c', youtube: '#f87171' };
 const BRAND_COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6'];
-const { normalizeScore, buildPrimarySummary, getArticleRiskBadge, deriveProgressState, inferBatchStart } = window.DashboardSummary;
+const { normalizeScore, buildPrimarySummary, getArticleRiskBadge, deriveProgressState, inferBatchStart, selectLatestCompletedRunsByKeyword } = window.DashboardSummary;
 
 let allAlerts = [];
 let trendChart = null;
@@ -247,14 +247,14 @@ async function loadData() {
 
     updateStatus(health);
     if (runsData.runs && runsData.runs.length > 0) {
-      // Fetch full details (analyses + pr_report) for each completed run
-      const completedRuns = runsData.runs.filter(r => r.ended_at);
+      // Fetch only the latest completed run for each keyword.
+      const completedRuns = selectLatestCompletedRunsByKeyword(runsData.runs, 12);
       if (completedRuns.length === 0) {
         showEmptyState('監控執行中，請稍候…');
         return;
       }
       const details = await Promise.all(
-        completedRuns.slice(0, 12).map(r =>
+        completedRuns.map(r =>
           fetch(`${API}/runs/${r.id}`).then(res => res.json()).catch(() => null)
         )
       );

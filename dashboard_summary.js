@@ -325,6 +325,20 @@
     return { visible: false };
   }
 
+  function selectLatestCompletedRunsByKeyword(runs, limit = 12) {
+    const latest = new Map();
+    (runs || []).forEach(run => {
+      if (!run || !run.ended_at || !run.keyword) return;
+      const prev = latest.get(run.keyword);
+      if (!prev || new Date(run.started_at || 0) > new Date(prev.started_at || 0)) {
+        latest.set(run.keyword, run);
+      }
+    });
+    return [...latest.values()]
+      .sort((a, b) => new Date(b.started_at || 0) - new Date(a.started_at || 0))
+      .slice(0, limit);
+  }
+
   return {
     normalizeScore,
     buildPrimarySummary,
@@ -332,5 +346,6 @@
     getArticleRiskBadge,
     deriveProgressState,
     inferBatchStart,
+    selectLatestCompletedRunsByKeyword,
   };
 });
