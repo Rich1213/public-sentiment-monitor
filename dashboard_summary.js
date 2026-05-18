@@ -117,6 +117,42 @@
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
   }
 
+  function summarizeCommentInsights(itemAnalyses) {
+    const rows = (itemAnalyses || []).filter(Boolean);
+    if (rows.length === 0) {
+      return {
+        total: 0,
+        dominantSentiment: null,
+        topThemes: [],
+        representativeComments: [],
+      };
+    }
+
+    const sentimentCounts = countBy(rows, item => item.sentiment || '未知');
+    const themeCounts = countBy(rows, item => item.theme || '其他');
+    const representativeComments = [...rows]
+      .sort((a, b) => {
+        const scoreDiff = normalizeScore(b.score) - normalizeScore(a.score);
+        if (scoreDiff !== 0) return scoreDiff;
+        return (b.content || '').length - (a.content || '').length;
+      })
+      .slice(0, 3)
+      .map(item => ({
+        sentiment: item.sentiment,
+        score: normalizeScore(item.score),
+        theme: item.theme || '其他',
+        content: item.content || '',
+        author: item.author || '',
+      }));
+
+    return {
+      total: rows.length,
+      dominantSentiment: sentimentCounts[0] ? sentimentCounts[0][0] : null,
+      topThemes: themeCounts.slice(0, 3).map(([theme]) => theme),
+      representativeComments,
+    };
+  }
+
   function buildNarrativeCandidates(items, source) {
     return (items || [])
       .filter(item => item && (item.sentiment === '負面' || item.sentiment === undefined || item.sentiment === null))
@@ -357,5 +393,6 @@
     deriveProgressState,
     inferBatchStart,
     selectLatestCompletedRunsByKeyword,
+    summarizeCommentInsights,
   };
 });

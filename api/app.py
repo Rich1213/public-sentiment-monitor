@@ -156,11 +156,13 @@ def get_run_detail(run_id: int):
             raise HTTPException(status_code=404, detail=f"Run {run_id} 不存在")
 
         analyses = db.get_run_analyses(run_id)
+        item_analyses = db.get_run_item_analyses(run_id)
         pr_report = db.get_run_pr_report(run_id)
 
         return {
             "run": run,
             "analyses": analyses,
+            "item_analyses": item_analyses,
             "pr_report": pr_report,
             "analyses_count": len(analyses),
         }

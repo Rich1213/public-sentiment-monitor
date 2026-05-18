@@ -231,7 +231,7 @@ const API = 'https://web-production-7a3df.up.railway.app';
 const BRANDS = ['7-ELEVEN', '全家', '萊爾富', 'OK mart'];
 const CH_COLORS = { google_news: '#818cf8', ptt: '#34d399', dcard: '#fb923c', youtube: '#f87171' };
 const BRAND_COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6'];
-const { normalizeScore, buildPrimarySummary, getArticleRiskBadge, deriveProgressState, inferBatchStart, selectLatestCompletedRunsByKeyword } = window.DashboardSummary;
+const { normalizeScore, buildPrimarySummary, getArticleRiskBadge, deriveProgressState, inferBatchStart, selectLatestCompletedRunsByKeyword, summarizeCommentInsights } = window.DashboardSummary;
 
 let allAlerts = [];
 let trendChart = null;
@@ -263,6 +263,7 @@ async function loadData() {
         .map(d => ({
           ...d.run,
           analyses: d.analyses || [],
+          item_analyses: d.item_analyses || [],
           pr_report: d.pr_report ? d.pr_report.report : null,
           dashboard_summary: d.pr_report ? d.pr_report.dashboard_summary : null,
           track: d.pr_report ? d.pr_report.track : null
@@ -296,7 +297,7 @@ function processRuns(runs) {
 
   runs.forEach(run => {
     const kw = run.keyword || '未知';
-    if (!brandMap[kw]) brandMap[kw] = { pos: 0, neu: 0, neg: 0, total: 0, scores: [], analyses: [], alerts: [], pr: null, dashboardSummary: null, keyword: kw };
+    if (!brandMap[kw]) brandMap[kw] = { pos: 0, neu: 0, neg: 0, total: 0, scores: [], analyses: [], itemAnalyses: [], alerts: [], pr: null, dashboardSummary: null, keyword: kw };
     const bm = brandMap[kw];
 
     if (run.analyses) {
@@ -340,6 +341,7 @@ function processRuns(runs) {
     }
     if (run.pr_report) bm.pr = run.pr_report;
     if (run.dashboard_summary) bm.dashboardSummary = run.dashboard_summary;
+    if (run.item_analyses) bm.itemAnalyses.push(...run.item_analyses);
   });
 
   allAlerts.sort((a, b) => b.score - a.score);
@@ -497,7 +499,9 @@ function renderAlertTable(alerts) {
 function renderPRStrategy(brandMap) {
   const primary = brandMap['7-ELEVEN'] || Object.values(brandMap)[0];
   if (!primary) return;
-  const summary = buildPrimarySummary(primary);
+  const marketContext = brandMap['超商食安'] || null;
+  const summary = buildPrimarySummary(primary, marketContext);
+  const commentSummary = summarizeCommentInsights(primary.itemAnalyses || []);
   const total = primary.total || 1;
   const negPct = Math.round(primary.neg / total * 100);
   const posPct = Math.round(primary.pos / total * 100);
@@ -519,7 +523,20 @@ function renderPRStrategy(brandMap) {
       ${summary.note}
     </div>`;
 
-  document.getElementById('pr-content').textContent = (primary.dashboardSummary || summary.narrative) + (primary.pr ? `\n\n補充策略建議：\n${primary.pr.slice(0, 500)}` : '');
+  const commentSection = commentSummary.total > 0
+    ? [
+        '留言區觀察：',
+        `主情緒：${commentSummary.dominantSentiment || '—'}`,
+        `前三主題：${commentSummary.topThemes.length > 0 ? commentSummary.topThemes.join('、') : '—'}`,
+        '代表性留言：',
+        ...commentSummary.representativeComments.map((item, idx) => `${idx + 1}. [${item.score}分/${item.theme}] ${item.content}`),
+      ].join('\n')
+    : '留言區觀察：尚無高價值留言分析資料';
+
+  document.getElementById('pr-content').textContent =
+    (primary.dashboardSummary || summary.narrative) +
+    `\n\n${commentSection}` +
+    (primary.pr ? `\n\n補充策略建議：\n${primary.pr.slice(0, 500)}` : '');
 }
 
 function showEmptyState(msg) {

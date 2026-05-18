@@ -7,6 +7,7 @@ const {
   getArticleRiskBadge,
   deriveProgressState,
   selectLatestCompletedRunsByKeyword,
+  summarizeCommentInsights,
 } = require('../dashboard_summary.js');
 
 test('normalizeScore maps legacy and integer scales', () => {
@@ -150,4 +151,18 @@ test('selectLatestCompletedRunsByKeyword keeps only the newest completed run per
   ]);
 
   assert.deepEqual(selected.map(r => r.id), [25, 24, 23]);
+});
+
+test('summarizeCommentInsights returns dominant sentiment, top themes, and representative comments', () => {
+  const summary = summarizeCommentInsights([
+    { sentiment: '負面', score: 5, theme: '食安危機', content: '真的太誇張，活蟲根本不能接受', author: 'a' },
+    { sentiment: '負面', score: 4, theme: '食安危機', content: '這種品管我不敢再買', author: 'b' },
+    { sentiment: '負面', score: 4, theme: '品牌信任', content: '以後看到小七會怕', author: 'c' },
+    { sentiment: '中立', score: 2, theme: '新聞討論', content: '等官方說明', author: 'd' },
+  ]);
+
+  assert.equal(summary.dominantSentiment, '負面');
+  assert.deepEqual(summary.topThemes, ['食安危機', '品牌信任', '新聞討論']);
+  assert.equal(summary.representativeComments.length, 3);
+  assert.match(summary.representativeComments[0].content, /活蟲/);
 });
