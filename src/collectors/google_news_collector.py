@@ -22,6 +22,7 @@ GoogleNewsCollector — 品牌敘事訊號採集器 v3
 渠道識別：channel = "google_news"
 """
 
+import os
 import feedparser
 import urllib.parse
 import re
@@ -72,14 +73,39 @@ class GoogleNewsCollector:
         self.search_query = get_search_query(keyword, "google_news")
 
     def _fetch_rss_feed(self, limit: int = 30) -> List[Dict]:
-        """透過 Google News RSS 獲取新聞列表。只用標題和 RSS summary，不進網頁。"""
+        """透過 Google News RSS 獲取新聞列表。
+
+        優先使用 ScraperAPI 代理（繞過雲端機房 IP 封鎖）；
+        無 API key 時降級為直連。
+        """
         encoded = urllib.parse.quote(self.search_query)
         rss_url = (
             f"https://news.google.com/rss/search"
             f"?q={encoded}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
         )
+
+        scraper_key = os.getenv("SCRAPERAPI_KEY", "")
+        if scraper_key:
+            # 透過 ScraperAPI 代理，解決 Google 封鎖雲端機房 IP 的問題
+            proxy_url = (
+                f"http://api.scraperapi.com?api_key={scraper_key}"
+                f"&url={urllib.parse.quote(rss_url, safe='')}"
+            )
+            print(f"  [Google News] 使用 ScraperAPI 代理採集...")
+        else:
+            proxy_url = None
+            print(f"  [Google News] 直連採集（無 ScraperAPI）...")
+
         try:
-            feed = feedparser.parse(rss_url)
+            if proxy_url:
+                import requests as _req
+                resp = _req.get(proxy_url, timeout=30)
+                resp.raise_for_status()
+                feed = feedparser.parse(resp.text)
+            else:
+                feed = feedparser.parse(rss_url)
+
+            print(f"  [Google News] RSS 回傳 {len(feed.entries)} 筆")
             results = []
             for entry in feed.entries[:limit]:
                 summary = clean_summary(
