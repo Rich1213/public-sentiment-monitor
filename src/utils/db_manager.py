@@ -230,11 +230,31 @@ class SentimentDB:
             c = conn.cursor()
             if self._adapter.is_postgres:
                 c.execute("ALTER TABLE pr_reports ADD COLUMN IF NOT EXISTS dashboard_summary TEXT")
+                c.execute("ALTER TABLE threads ADD COLUMN IF NOT EXISTS platform_id TEXT")
+                c.execute("ALTER TABLE thread_items ADD COLUMN IF NOT EXISTS platform_item_id TEXT")
+                c.execute("ALTER TABLE thread_items ADD COLUMN IF NOT EXISTS like_count INTEGER")
+                c.execute("ALTER TABLE thread_items ADD COLUMN IF NOT EXISTS published_at TEXT")
+                c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_threads_platform_id ON threads(platform_id)")
+                c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_items_platform_item_id ON thread_items(platform_item_id)")
             else:
                 c.execute("PRAGMA table_info(pr_reports)")
                 cols = [row["name"] for row in c.fetchall()]
                 if "dashboard_summary" not in cols:
                     c.execute("ALTER TABLE pr_reports ADD COLUMN dashboard_summary TEXT")
+                c.execute("PRAGMA table_info(threads)")
+                thread_cols = [row["name"] for row in c.fetchall()]
+                if "platform_id" not in thread_cols:
+                    c.execute("ALTER TABLE threads ADD COLUMN platform_id TEXT")
+                c.execute("PRAGMA table_info(thread_items)")
+                item_cols = [row["name"] for row in c.fetchall()]
+                if "platform_item_id" not in item_cols:
+                    c.execute("ALTER TABLE thread_items ADD COLUMN platform_item_id TEXT")
+                if "like_count" not in item_cols:
+                    c.execute("ALTER TABLE thread_items ADD COLUMN like_count INTEGER")
+                if "published_at" not in item_cols:
+                    c.execute("ALTER TABLE thread_items ADD COLUMN published_at TEXT")
+                c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_threads_platform_id ON threads(platform_id)")
+                c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_items_platform_item_id ON thread_items(platform_item_id)")
             conn.commit()
         except Exception:
             conn.rollback()
@@ -281,6 +301,7 @@ class SentimentDB:
                 url          TEXT    NOT NULL,
                 author       TEXT,
                 board        TEXT,
+                platform_id  TEXT UNIQUE,
                 keyword      TEXT,
                 published_at TEXT,
                 fetched_at   TEXT    DEFAULT (datetime('now')),
@@ -298,7 +319,10 @@ class SentimentDB:
                 thread_id TEXT    NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
                 item_type TEXT    NOT NULL,
                 author    TEXT,
+                platform_item_id TEXT UNIQUE,
                 content   TEXT    NOT NULL,
+                like_count INTEGER,
+                published_at TEXT,
                 sequence  INTEGER DEFAULT 0,
                 created_at TEXT   DEFAULT (datetime('now'))
             );
@@ -368,6 +392,7 @@ class SentimentDB:
                 url          TEXT    NOT NULL,
                 author       TEXT,
                 board        TEXT,
+                platform_id  TEXT UNIQUE,
                 keyword      TEXT,
                 published_at TEXT,
                 fetched_at   TIMESTAMPTZ DEFAULT NOW(),
@@ -384,7 +409,10 @@ class SentimentDB:
                 thread_id TEXT    NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
                 item_type TEXT    NOT NULL,
                 author    TEXT,
+                platform_item_id TEXT UNIQUE,
                 content   TEXT    NOT NULL,
+                like_count INTEGER,
+                published_at TEXT,
                 sequence  INTEGER DEFAULT 0,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )""",
@@ -691,6 +719,7 @@ class SentimentDB:
         title: str,
         author: str = None,
         board: str = None,
+        platform_id: str = None,
         keyword: str = None,
         published_at: str = None,
         push_count: int = None,
@@ -703,9 +732,9 @@ class SentimentDB:
         ph = self._ph()
         now = datetime.now().isoformat()
 
-        cols = ["id","source_id","channel","title","url","author","board","keyword",
+        cols = ["id","source_id","channel","title","url","author","board","platform_id","keyword",
                 "published_at","fetched_at","push_count","boo_count","neutral_count","comment_count"]
-        vals = (thread_id, source_id, channel, title, url, author, board, keyword,
+        vals = (thread_id, source_id, channel, title, url, author, board, platform_id, keyword,
                 published_at, now, push_count, boo_count, neutral_count, comment_count)
         ph_list = ", ".join([ph] * len(cols))
         cols_str = ", ".join(cols)
@@ -714,7 +743,7 @@ class SentimentDB:
         try:
             c = conn.cursor()
             if self._adapter.is_postgres:
-                update_cols = ["source_id","channel","title","url","author","board",
+                update_cols = ["source_id","channel","title","url","author","board","platform_id",
                                "keyword","published_at","fetched_at",
                                "push_count","boo_count","neutral_count","comment_count"]
                 updates = ", ".join(f"{col} = EXCLUDED.{col}" for col in update_cols)
@@ -738,6 +767,9 @@ class SentimentDB:
         item_type: str = "main",
         author: str = None,
         sequence: int = 0,
+        platform_item_id: str = None,
+        like_count: int = None,
+        published_at: str = None,
     ):
         if not content or not content.strip():
             return
@@ -745,19 +777,35 @@ class SentimentDB:
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
-            c.execute(
-                f"INSERT INTO thread_items (thread_id, item_type, author, content, sequence) "
-                f"VALUES ({ph},{ph},{ph},{ph},{ph})",
-                (thread_id, item_type, author, content.strip(), sequence)
-            )
+            if self._adapter.is_postgres:
+                c.execute(
+                    f"INSERT INTO thread_items (thread_id, item_type, author, platform_item_id, content, like_count, published_at, sequence) "
+                    f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph}) "
+                    f"ON CONFLICT (platform_item_id) DO NOTHING",
+                    (thread_id, item_type, author, platform_item_id, content.strip(), like_count, published_at, sequence)
+                )
+            else:
+                c.execute(
+                    f"INSERT OR IGNORE INTO thread_items (thread_id, item_type, author, platform_item_id, content, like_count, published_at, sequence) "
+                    f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})",
+                    (thread_id, item_type, author, platform_item_id, content.strip(), like_count, published_at, sequence)
+                )
             conn.commit()
         finally:
             conn.close()
 
     def save_thread_items_bulk(self, thread_id: str, items: List[Dict]):
         rows = [
-            (thread_id, it.get("item_type", "main"),
-             it.get("author"), it.get("content", ""), it.get("sequence", 0))
+            (
+                thread_id,
+                it.get("item_type", "main"),
+                it.get("author"),
+                it.get("platform_item_id"),
+                it.get("content", ""),
+                it.get("like_count"),
+                it.get("published_at"),
+                it.get("sequence", 0),
+            )
             for it in items if it.get("content", "").strip()
         ]
         if not rows:
@@ -766,10 +814,17 @@ class SentimentDB:
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
-            sql = (
-                f"INSERT INTO thread_items (thread_id, item_type, author, content, sequence) "
-                f"VALUES ({ph},{ph},{ph},{ph},{ph})"
-            )
+            if self._adapter.is_postgres:
+                sql = (
+                    f"INSERT INTO thread_items (thread_id, item_type, author, platform_item_id, content, like_count, published_at, sequence) "
+                    f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph}) "
+                    f"ON CONFLICT (platform_item_id) DO NOTHING"
+                )
+            else:
+                sql = (
+                    f"INSERT OR IGNORE INTO thread_items (thread_id, item_type, author, platform_item_id, content, like_count, published_at, sequence) "
+                    f"VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})"
+                )
             c.executemany(sql, rows)
             conn.commit()
         finally:
@@ -847,6 +902,8 @@ class SentimentDB:
             source_name = "PTT"
         elif channel == "dcard":
             source_name = "Dcard"
+        elif channel == "youtube":
+            source_name = "YouTube"
         else:
             source_name = "Google News"
 
@@ -861,6 +918,7 @@ class SentimentDB:
             channel=channel,
             title=article["title"],
             board=board,
+            platform_id=article.get("platform_id"),
             keyword=article.get("keyword"),
             published_at=article.get("published"),
             push_count=article.get("push_count"),
@@ -880,6 +938,9 @@ class SentimentDB:
                 item_type=item.get("item_type", "push"),
                 author=item.get("author"),
                 sequence=item.get("sequence", 0),
+                platform_item_id=item.get("platform_item_id"),
+                like_count=item.get("like_count"),
+                published_at=item.get("published_at"),
             )
 
         if run_id:

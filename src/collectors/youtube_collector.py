@@ -127,7 +127,7 @@ class YouTubeCollector:
 
     # ── 抓留言 ───────────────────────────────────────────────────
 
-    def _get_comments(self, video_id: str, max_comments: int = COMMENTS_PER_VIDEO) -> List[str]:
+    def _get_comments(self, video_id: str, max_comments: int = COMMENTS_PER_VIDEO) -> List[Dict]:
         """取得影片頂層留言（按相關性排序）。"""
         url = f"{YOUTUBE_API_BASE}/commentThreads"
         params = {
@@ -146,10 +146,18 @@ class YouTubeCollector:
             resp.raise_for_status()
             comments = []
             for it in resp.json().get("items", []):
-                text = it["snippet"]["topLevelComment"]["snippet"].get("textDisplay", "")
-                likes = it["snippet"]["topLevelComment"]["snippet"].get("likeCount", 0)
+                comment = it["snippet"]["topLevelComment"]
+                snippet = comment["snippet"]
+                text = snippet.get("textDisplay", "")
+                likes = snippet.get("likeCount", 0)
                 if text.strip():
-                    comments.append(f"[{likes}讚] {text[:200]}")
+                    comments.append({
+                        "comment_id": comment.get("id"),
+                        "author": snippet.get("authorDisplayName"),
+                        "content": text[:200],
+                        "like_count": likes,
+                        "published_at": snippet.get("publishedAt"),
+                    })
             return comments
         except Exception as e:
             print(f"  [YouTube] 留言抓取失敗 ({video_id})：{e}")
@@ -225,7 +233,10 @@ class YouTubeCollector:
                 continue
 
             comments = self._get_comments(vid)
-            comment_block = "\n".join(comments[:COMMENTS_PER_VIDEO]) if comments else ""
+            comment_block = "\n".join(
+                f"[{it.get('like_count', 0)}讚] {it.get('content', '')}"
+                for it in comments[:COMMENTS_PER_VIDEO]
+            ) if comments else ""
 
             content_parts = [title]
             if v["description"]:
@@ -249,6 +260,7 @@ class YouTubeCollector:
                 "title":         title,
                 "link":          url,
                 "source":        v["channel"],
+                "platform_id":   vid,
                 "published":     v["published"],
                 "content":       content,
                 "channel":       self.CHANNEL,
@@ -257,7 +269,18 @@ class YouTubeCollector:
                 "boo_count":     0,
                 "neutral_count": 0,
                 "comment_count": len(comments),
-                "push_items":    [],
+                "push_items":    [
+                    {
+                        "item_type": "comment",
+                        "author": item.get("author"),
+                        "content": item.get("content"),
+                        "sequence": idx,
+                        "platform_item_id": item.get("comment_id"),
+                        "like_count": item.get("like_count"),
+                        "published_at": item.get("published_at"),
+                    }
+                    for idx, item in enumerate(comments, 1)
+                ],
             }
 
             if self.db:
@@ -267,6 +290,7 @@ class YouTubeCollector:
                     channel=self.CHANNEL,
                     title=title,
                     board=v["channel"],
+                    platform_id=vid,
                     keyword=self.keyword,
                     published_at=v["published"],
                     push_count=v.get("view_count", 0),
@@ -274,6 +298,8 @@ class YouTubeCollector:
                 )
                 if content:
                     self.db.save_thread_item(thread_id, content, item_type="main")
+                if article["push_items"]:
+                    self.db.save_thread_items_bulk(thread_id, article["push_items"])
 
             articles.append(article)
 
