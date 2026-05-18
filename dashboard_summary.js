@@ -50,6 +50,61 @@
     return [...new Set(arr.filter(Boolean))];
   }
 
+  const EVENT_CLUSTERS = [
+    {
+      key: 'food_safety_bug',
+      label: '超商食品出現活蟲疑慮',
+      riskText: '已反映出食安與品管風險擴散',
+      actionText: '建議立即釐清是否直接涉及 {brand} 商品、門市或供應鏈。',
+      keywords: ['活蟲', '小蟲', '蟲害', '寄生蟲'],
+    },
+    {
+      key: 'food_safety_foreign_object',
+      label: '超商食品出現異物疑慮',
+      riskText: '已反映出食安與品管風險升高',
+      actionText: '建議立即確認商品批次、供應鏈與門市處理流程。',
+      keywords: ['異物', '污染', '發霉', '腐敗', '食安', '吃壞肚子'],
+    },
+    {
+      key: 'fraud',
+      label: '發票與票券詐騙疑慮擴散',
+      riskText: '已反映出品牌信任與資訊安全風險升高',
+      actionText: '建議立即澄清官方流程並加強防詐提醒。',
+      keywords: ['詐騙', '中獎', '假冒', '釣魚'],
+    },
+    {
+      key: 'franchise',
+      label: '加盟與經營爭議升溫',
+      riskText: '已反映出加盟管理與品牌治理風險升高',
+      actionText: '建議立即釐清制度與個案責任範圍。',
+      keywords: ['加盟', '展店', '店東', '創業'],
+    },
+    {
+      key: 'service',
+      label: '門市服務與消費體驗負評累積',
+      riskText: '已反映出門市服務體驗風險累積',
+      actionText: '建議針對高頻抱怨點提出門市改善措施。',
+      keywords: ['店員', '服務', '態度', '結帳', '不便', '系統異常', '珍食'],
+    },
+    {
+      key: 'value',
+      label: '商品價格與 CP 值爭議升高',
+      riskText: '已反映出商品價值感與消費滿意度下滑',
+      actionText: '建議檢視價格、促銷與商品溝通策略。',
+      keywords: ['漲價', 'CP值', '縮水', '商品卡', '紀念品', '股民', '負評'],
+    },
+  ];
+
+  function detectEventCluster(text) {
+    const haystack = String(text || '').toLowerCase();
+    for (const cluster of EVENT_CLUSTERS) {
+      if (cluster.keywords.some(keyword => haystack.includes(String(keyword).toLowerCase()))) {
+        return cluster;
+      }
+    }
+    return null;
+  }
+
   function countBy(items, keyFn) {
     const map = new Map();
     items.forEach(item => {
@@ -58,6 +113,57 @@
       map.set(key, (map.get(key) || 0) + 1);
     });
     return [...map.entries()].sort((a, b) => b[1] - a[1]);
+  }
+
+  function buildNarrativeCandidates(items, source) {
+    return (items || [])
+      .filter(item => item && item.sentiment === '負面')
+      .map(item => {
+        const mergedText = `${item.theme || ''} ${item.title || ''}`;
+        return {
+          ...item,
+          source,
+          cluster: detectEventCluster(mergedText),
+        };
+      });
+  }
+
+  function scoreCluster(candidate) {
+    const base = normalizeScore(candidate.score) * 10;
+    const sourceBoost = candidate.source === 'market' ? 8 : 0;
+    const foodSafetyBoost = candidate.cluster && candidate.cluster.key.startsWith('food_safety') ? 12 : 0;
+    return base + sourceBoost + foodSafetyBoost;
+  }
+
+  function pickDominantEvent(primary, marketContext) {
+    const primaryCandidates = buildNarrativeCandidates(primary?.alerts?.length ? primary.alerts : primary?.analyses, 'primary');
+    const marketCandidates = buildNarrativeCandidates(marketContext?.alerts?.length ? marketContext.alerts : marketContext?.analyses, 'market');
+    const allCandidates = [...primaryCandidates, ...marketCandidates].filter(candidate => candidate.cluster);
+    if (allCandidates.length === 0) return null;
+
+    const clusters = new Map();
+    allCandidates.forEach(candidate => {
+      const key = candidate.cluster.key;
+      if (!clusters.has(key)) {
+        clusters.set(key, {
+          cluster: candidate.cluster,
+          candidates: [],
+          score: 0,
+          maxScore: 0,
+        });
+      }
+      const entry = clusters.get(key);
+      entry.candidates.push(candidate);
+      entry.score += scoreCluster(candidate);
+      entry.maxScore = Math.max(entry.maxScore, normalizeScore(candidate.score));
+    });
+
+    return [...clusters.values()]
+      .sort((a, b) => {
+        if (b.maxScore !== a.maxScore) return b.maxScore - a.maxScore;
+        if (b.score !== a.score) return b.score - a.score;
+        return b.candidates.length - a.candidates.length;
+      })[0];
   }
 
   function pickPrimaryChannels(alerts, negativeAnalyses) {
@@ -82,13 +188,24 @@
     );
   }
 
-  function buildNarrative(primary, negativeAnalyses, topThemes, riskLabel, primaryChannels) {
+  function buildNarrative(primary, negativeAnalyses, topThemes, riskLabel, primaryChannels, marketContext) {
     if (!primary || !primary.total) {
       return '今日尚無足夠資料，請先執行監控或等待更多主品牌輿情進入。';
     }
 
     if (negativeAnalyses.length === 0) {
       return `今日主品牌聲量以正面或中立訊號為主，尚未觀察到明確危機擴散，建議持續追蹤主要渠道變化。`;
+    }
+
+    const dominantEvent = pickDominantEvent(primary, marketContext);
+    if (dominantEvent) {
+      const event = dominantEvent.cluster;
+      const channels = countBy(dominantEvent.candidates, a => CHANNEL_LABELS[a.channel] || a.channel)
+        .slice(0, 2)
+        .map(([label]) => label);
+      const channelText = channels.join('、') || '主要社群渠道';
+      const actionText = event.actionText.replace('{brand}', primary.keyword);
+      return `今日最需要關注的事件是${event.label}，主要出現在 ${channelText}，${event.riskText}，${actionText}`;
     }
 
     const channelText = primaryChannels.join('、');
@@ -100,7 +217,7 @@
     return `今日最需要關注的事件是${themeText}，主要出現在 ${channelText}，${riskText}，需要立即釐清是否直接涉及 ${primary.keyword} 門市、商品或供應鏈。`;
   }
 
-  function buildPrimarySummary(primary) {
+  function buildPrimarySummary(primary, marketContext) {
     if (!primary || !primary.total) {
       return {
         riskScore: 0,
@@ -137,7 +254,7 @@
     return {
       riskScore,
       ...riskLabel,
-      narrative: buildNarrative(primary, negativeAnalyses, topThemes, riskLabel, primaryChannels),
+      narrative: buildNarrative(primary, negativeAnalyses, topThemes, riskLabel, primaryChannels, marketContext),
     };
   }
 

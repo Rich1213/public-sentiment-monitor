@@ -43,6 +43,46 @@ test('buildPrimarySummary returns crisis-oriented 0-100 risk score and narrative
   assert.match(summary.narrative, /需要立即釐清是否直接涉及 7-ELEVEN/);
 });
 
+test('buildPrimarySummary prioritizes severe market food-safety crisis over weaker brand complaints', () => {
+  const summary = buildPrimarySummary(
+    {
+      keyword: '7-ELEVEN',
+      pos: 8,
+      neu: 2,
+      neg: 3,
+      total: 13,
+      scores: [4, 4, 3],
+      analyses: [
+        { channel: 'youtube', sentiment: '負面', score: 4, theme: '超商加盟問題', title: '2024 04 17 有500萬要加盟小7嗎' },
+        { channel: 'ptt', sentiment: '負面', score: 4, theme: '發票中獎詐騙', title: 'Re: [問卦] 7-11雲端發票中獎詐騙' },
+        { channel: 'dcard', sentiment: '負面', score: 3, theme: '股民不滿商品卡', title: '中鋼紀念品商品卡負評' },
+      ],
+      alerts: [
+        { channel: 'youtube', sentiment: '負面', score: 4, theme: '超商加盟問題', title: '2024 04 17 有500萬要加盟小7嗎' },
+        { channel: 'ptt', sentiment: '負面', score: 4, theme: '發票中獎詐騙', title: 'Re: [問卦] 7-11雲端發票中獎詐騙' },
+      ],
+    },
+    {
+      keyword: '超商食安',
+      total: 5,
+      analyses: [
+        { channel: 'youtube', sentiment: '負面', score: 5, theme: '食安危機_活蟲', title: '超商鮭魚沙拉驚見活蟲蠕動' },
+        { channel: 'youtube', sentiment: '負面', score: 5, theme: '超商食安蟲害', title: '義大利麵小蟲亂竄超噁' },
+      ],
+      alerts: [
+        { channel: 'youtube', sentiment: '負面', score: 5, theme: '食安危機_活蟲', title: '超商鮭魚沙拉驚見活蟲蠕動' },
+        { channel: 'youtube', sentiment: '負面', score: 5, theme: '超商食安蟲害', title: '義大利麵小蟲亂竄超噁' },
+      ],
+    }
+  );
+
+  assert.match(summary.narrative, /今日最需要關注的事件是超商食品出現活蟲疑慮/);
+  assert.match(summary.narrative, /主要出現在 YouTube/);
+  assert.match(summary.narrative, /食安與品管風險擴散/);
+  assert.doesNotMatch(summary.narrative, /發票中獎詐騙/);
+  assert.doesNotMatch(summary.narrative, /加盟/);
+});
+
 test('buildPrimarySummary handles no-primary-data gracefully', () => {
   const summary = buildPrimarySummary(null);
   assert.equal(summary.riskScore, 0);

@@ -354,13 +354,14 @@ function processRuns(runs) {
 
 function renderKPIs(brandMap, totalAlerts, totalArticles) {
   const primary = brandMap['7-ELEVEN'] || Object.values(brandMap)[0];
-  const summary = buildPrimarySummary(primary || null);
+  const marketContext = brandMap['超商食安'] || null;
+  const summary = buildPrimarySummary(primary || null, marketContext);
 
   document.getElementById('kpi-alerts').textContent = `${summary.riskScore}/100`;
   document.getElementById('kpi-alerts').className = `kpi-val risk-${summary.colorToken}`;
   document.getElementById('kpi-alert-note').textContent = summary.note;
   document.getElementById('kpi-alert-note').className = `kpi-note risk-${summary.colorToken}`;
-  document.getElementById('kpi-narrative').textContent = primary?.dashboardSummary || summary.narrative;
+  document.getElementById('kpi-narrative').textContent = summary.narrative;
   document.getElementById('kpi-articles').textContent = totalArticles;
 
   if (primary && primary.scores.length > 0) {
