@@ -38,12 +38,22 @@
   .card-title { font-size: 11px; font-weight: 500; color: #64748b; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
   .kpi-val { font-size: 28px; font-weight: 700; color: #f1f5f9; line-height: 1; }
   .kpi-sub { font-size: 11px; color: #64748b; margin-top: 4px; }
+  .kpi-note { font-size: 11px; margin-top: 8px; font-weight: 600; }
   .section-header { font-size: 13px; font-weight: 600; color: #94a3b8; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
   .zone-badge { width: 20px; height: 20px; border-radius: 50%; background: #252840; border: 1px solid #3d4268; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; color: #7c3aed; }
 
-  /* ── Track badge ── */
-  .track-a { background: #450a0a; color: #fca5a5; border: 1px solid #7f1d1d; padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; }
-  .track-b { background: #052e16; color: #86efac; border: 1px solid #14532d; padding: 4px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+  .risk-low { color: #86efac; }
+  .risk-medium { color: #fcd34d; }
+  .risk-high { color: #fdba74; }
+  .risk-danger { color: #fca5a5; }
+  .risk-muted { color: #94a3b8; }
+  .risk-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid #2d3148; font-size: 11px; font-weight: 700; margin-top: 10px; }
+  .risk-pill-low { background: #052e16; color: #86efac; border-color: #14532d; }
+  .risk-pill-medium { background: #422006; color: #fcd34d; border-color: #78350f; }
+  .risk-pill-high { background: #431407; color: #fdba74; border-color: #7c2d12; }
+  .risk-pill-danger { background: #450a0a; color: #fca5a5; border-color: #7f1d1d; }
+  .risk-pill-muted { background: #1e2235; color: #94a3b8; border-color: #334155; }
+  .narrative-text { font-size: 13px; color: #cbd5e1; line-height: 1.8; }
 
   /* ── Brand cards ── */
   .brand-card { background: #1a1d2e; border: 1px solid #2d3148; border-radius: 10px; padding: 14px; }
@@ -76,7 +86,7 @@
   .article-link { color: #818cf8; text-decoration: none; }
   .article-link:hover { color: #a5b4fc; text-decoration: underline; }
 
-  /* ── PR Strategy ── */
+  /* ── Narrative ── */
   .pr-box { background: #0f1923; border: 1px solid #1e3a4a; border-radius: 10px; padding: 14px 16px; }
   .pr-content { font-size: 12px; color: #94a3b8; line-height: 1.7; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
   .pr-content::-webkit-scrollbar { width: 4px; }
@@ -153,8 +163,8 @@
   <!-- ── Zone 1: KPI Bar ── -->
   <div style="margin-bottom:6px" class="section-header"><span class="zone-badge">1</span> 今日概況</div>
   <div class="grid-4" id="kpi-grid">
-    <div class="card"><div class="card-title">PR 軌道</div><div id="kpi-track">—</div></div>
-    <div class="card"><div class="card-title">公關風險警報</div><div class="kpi-val" id="kpi-alerts">—</div><div class="kpi-sub">風險等級 ≥ 3 級</div></div>
+    <div class="card"><div class="card-title">公關風險警報</div><div class="kpi-val" id="kpi-alerts">—</div><div class="kpi-sub" id="kpi-alert-sub">主品牌綜合風險分數</div><div class="kpi-note" id="kpi-alert-note">—</div></div>
+    <div class="card"><div class="card-title">今日論述</div><div class="narrative-text" id="kpi-narrative">—</div></div>
     <div class="card"><div class="card-title">分析文章數</div><div class="kpi-val" id="kpi-articles">—</div><div class="kpi-sub">本次執行</div></div>
     <div class="card"><div class="card-title">主目標品牌</div><div class="kpi-val" style="font-size:18px; margin-top:4px" id="kpi-brand">7-ELEVEN</div><div class="kpi-sub" id="kpi-sentiment-avg">平均情緒強度 —</div></div>
   </div>
@@ -198,28 +208,30 @@
     </div>
   </div>
 
-  <!-- ── Zone 4: PR Strategy ── -->
-  <div class="section-header"><span class="zone-badge">4</span> 最新 PR 策略建議</div>
+  <!-- ── Zone 4: Narrative Summary ── -->
+  <div class="section-header"><span class="zone-badge">4</span> 主品牌論述摘要</div>
   <div class="grid-2-eq">
     <div class="card">
-      <div class="card-title">軌道判定依據</div>
+      <div class="card-title">風險構成</div>
       <div id="track-reason" style="font-size:12px; color:#94a3b8; line-height:1.7">—</div>
     </div>
     <div class="card">
-      <div class="card-title">策略摘要</div>
+      <div class="card-title">延伸說明</div>
       <div class="pr-box">
-        <div class="pr-content" id="pr-content">尚未有 PR 策略資料。請先執行監控。</div>
+        <div class="pr-content" id="pr-content">尚未有主品牌論述資料。請先執行監控。</div>
       </div>
     </div>
   </div>
 
 </div>
 
+<script src="./dashboard_summary.js"></script>
 <script>
 const API = 'https://web-production-7a3df.up.railway.app';
 const BRANDS = ['7-ELEVEN', '全家', '萊爾富', 'OK mart'];
 const CH_COLORS = { google_news: '#818cf8', ptt: '#34d399', dcard: '#fb923c', youtube: '#f87171' };
 const BRAND_COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6'];
+const { normalizeScore, buildPrimarySummary } = window.DashboardSummary;
 
 let allAlerts = [];
 let trendChart = null;
@@ -272,20 +284,6 @@ function updateStatus(health) {
   document.getElementById('last-update').textContent = `更新：${ts.toLocaleTimeString('zh-TW')}`;
 }
 
-// ── 分數相容層 ─────────────────────────────────────────────────
-// 舊版 LLM 輸出 0.0-1.0 float；新版輸出 1-5 整數
-// 統一對應到 1-5，讓新舊資料都能正確顯示
-function normalizeScore(rawScore) {
-  if (rawScore === null || rawScore === undefined) return 0;
-  if (rawScore >= 1) return Math.round(rawScore); // 新版：1-5 整數，直接使用
-  // 舊版：0.0-1.0 對應到 1-5
-  if (rawScore >= 0.85) return 5;
-  if (rawScore >= 0.70) return 4;
-  if (rawScore >= 0.50) return 3;
-  if (rawScore >= 0.30) return 2;
-  return 1;
-}
-
 function processRuns(runs) {
   // Group by keyword (brand)
   const brandMap = {};
@@ -297,7 +295,7 @@ function processRuns(runs) {
 
   runs.forEach(run => {
     const kw = run.keyword || '未知';
-    if (!brandMap[kw]) brandMap[kw] = { pos: 0, neu: 0, neg: 0, total: 0, scores: [], track: null, pr: null };
+    if (!brandMap[kw]) brandMap[kw] = { pos: 0, neu: 0, neg: 0, total: 0, scores: [], analyses: [], alerts: [], pr: null, keyword: kw };
     const bm = brandMap[kw];
 
     if (run.analyses) {
@@ -315,6 +313,7 @@ function processRuns(runs) {
         else bm.neu++;
         const normScore = normalizeScore(a.score);
         bm.scores.push(normScore);
+        bm.analyses.push({ ...a, score: normScore });
         const ch = a.channel || '';
         if (ch in channelCounts && !isDup) channelCounts[ch]++;
 
@@ -329,12 +328,16 @@ function processRuns(runs) {
               url: a.url || '#', score: normScore, theme: a.theme || '—',
               published: a.published_at || ''
             });
+            bm.alerts.push({
+              brand: kw, channel: ch, title: a.title || '—',
+              url: a.url || '#', score: normScore, theme: a.theme || '—',
+              published: a.published_at || ''
+            });
           }
         }
       });
     }
     if (run.pr_report) bm.pr = run.pr_report;
-    if (run.track) bm.track = run.track;
   });
 
   allAlerts.sort((a, b) => b.score - a.score);
@@ -349,15 +352,13 @@ function processRuns(runs) {
 
 function renderKPIs(brandMap, totalAlerts, totalArticles) {
   const primary = brandMap['7-ELEVEN'] || Object.values(brandMap)[0];
-  const track = primary ? (primary.neg > (primary.pos + primary.neu) / 2 ? 'A' : 'B') : null;
+  const summary = buildPrimarySummary(primary || null);
 
-  document.getElementById('kpi-track').innerHTML = track === 'A'
-    ? '<span class="track-a">Track A — 危機應對</span>'
-    : track === 'B'
-    ? '<span class="track-b">Track B — 品牌進攻</span>'
-    : '<span style="color:#475569">—</span>';
-
-  document.getElementById('kpi-alerts').textContent = totalAlerts;
+  document.getElementById('kpi-alerts').textContent = `${summary.riskScore}/100`;
+  document.getElementById('kpi-alerts').className = `kpi-val risk-${summary.colorToken}`;
+  document.getElementById('kpi-alert-note').textContent = summary.note;
+  document.getElementById('kpi-alert-note').className = `kpi-note risk-${summary.colorToken}`;
+  document.getElementById('kpi-narrative').textContent = summary.narrative;
   document.getElementById('kpi-articles').textContent = totalArticles;
 
   if (primary && primary.scores.length > 0) {
@@ -436,7 +437,7 @@ function renderTrend(runs) {
       plugins: { legend: { labels: { color: '#64748b', font: { size: 10 }, boxWidth: 12, padding: 8 } } },
       scales: {
         x: { ticks: { color: '#475569', font: { size: 10 } }, grid: { color: '#1e2235' } },
-        y: { min: 0, max: 1, ticks: { color: '#475569', font: { size: 10 }, stepSize: 0.2 }, grid: { color: '#1e2235' } }
+        y: { min: 0, max: 5, ticks: { color: '#475569', font: { size: 10 }, stepSize: 1 }, grid: { color: '#1e2235' } }
       }
     }
   });
@@ -500,28 +501,29 @@ function renderAlertTable(alerts) {
 function renderPRStrategy(brandMap) {
   const primary = brandMap['7-ELEVEN'] || Object.values(brandMap)[0];
   if (!primary) return;
-
-  const track = primary.neg > (primary.pos + primary.neu) / 2 ? 'A' : 'B';
+  const summary = buildPrimarySummary(primary);
   const total = primary.total || 1;
   const negPct = Math.round(primary.neg / total * 100);
   const posPct = Math.round(primary.pos / total * 100);
   const avgScore = primary.scores.length > 0 ? (primary.scores.reduce((a, b) => a + b, 0) / primary.scores.length).toFixed(2) : '—';
+  const highRiskCount = (primary.alerts || []).filter(a => a.score >= 4).length;
+  const spreadChannels = [...new Set((primary.alerts || []).map(a => ({ google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', youtube: 'YouTube' }[a.channel] || a.channel)))];
 
   document.getElementById('track-reason').innerHTML = `
     <div style="margin-bottom:8px">
-      <span style="color:#94a3b8">軌道：</span>
-      ${track === 'A' ? '<span class="track-a">Track A</span>' : '<span class="track-b">Track B</span>'}
+      <span style="color:#94a3b8">主品牌風險：</span>
+      <span class="risk-pill risk-pill-${summary.colorToken}">${summary.riskScore}/100 · ${summary.label}</span>
     </div>
     <div style="margin-bottom:4px"><span style="color:#64748b">負面佔比</span> <span style="color:#fca5a5">${negPct}%</span></div>
     <div style="margin-bottom:4px"><span style="color:#64748b">正面佔比</span> <span style="color:#86efac">${posPct}%</span></div>
     <div style="margin-bottom:4px"><span style="color:#64748b">平均強度</span> <span style="color:#e2e8f0">${avgScore}</span></div>
+    <div style="margin-bottom:4px"><span style="color:#64748b">高風險文章</span> <span style="color:#fdba74">${highRiskCount} 篇</span></div>
+    <div style="margin-bottom:4px"><span style="color:#64748b">擴散渠道</span> <span style="color:#e2e8f0">${spreadChannels.length > 0 ? spreadChannels.join('、') : '—'}</span></div>
     <div style="margin-top:10px; font-size:11px; color:#475569">
-      ${track === 'A' ? '負面聲量過半或高強度警報觸發 Track A 危機應對模式' : '正面聲量主導，啟動 Track B 品牌進攻模式'}
+      ${summary.note}
     </div>`;
 
-  if (primary.pr) {
-    document.getElementById('pr-content').textContent = primary.pr.slice(0, 800) + (primary.pr.length > 800 ? '\n\n⋯⋯（查看完整報告請執行 daily_report.py）' : '');
-  }
+  document.getElementById('pr-content').textContent = summary.narrative + (primary.pr ? `\n\n補充策略建議：\n${primary.pr.slice(0, 500)}` : '');
 }
 
 function showEmptyState(msg) {
@@ -530,7 +532,8 @@ function showEmptyState(msg) {
   document.getElementById('alert-table-wrap').innerHTML = `<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">尚無資料</div></div>`;
   document.getElementById('channel-bars').innerHTML = `<div style="color:#475569;font-size:12px;padding:20px 0">尚無渠道資料</div>`;
   ['kpi-alerts','kpi-articles'].forEach(id => document.getElementById(id).textContent = '0');
-  document.getElementById('kpi-track').innerHTML = '<span style="color:#475569">—</span>';
+  document.getElementById('kpi-narrative').textContent = hint;
+  document.getElementById('kpi-alert-note').textContent = '等待更多資料';
   document.getElementById('status-label').textContent = 'API 正常 · 無資料';
   document.getElementById('last-update').textContent = `更新：${new Date().toLocaleTimeString('zh-TW')}`;
 }
