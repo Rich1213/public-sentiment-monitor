@@ -214,7 +214,26 @@ async function loadData() {
 
     updateStatus(health);
     if (runsData.runs && runsData.runs.length > 0) {
-      processRuns(runsData.runs);
+      // Fetch full details (analyses + pr_report) for each completed run
+      const completedRuns = runsData.runs.filter(r => r.ended_at);
+      if (completedRuns.length === 0) {
+        showEmptyState('監控執行中，請稍候…');
+        return;
+      }
+      const details = await Promise.all(
+        completedRuns.slice(0, 12).map(r =>
+          fetch(`${API}/runs/${r.id}`).then(res => res.json()).catch(() => null)
+        )
+      );
+      const fullRuns = details
+        .filter(Boolean)
+        .map(d => ({
+          ...d.run,
+          analyses: d.analyses || [],
+          pr_report: d.pr_report ? d.pr_report.report : null,
+          track: d.pr_report ? d.pr_report.track : null
+        }));
+      processRuns(fullRuns);
     } else {
       showEmptyState();
     }
@@ -449,8 +468,9 @@ function renderPRStrategy(brandMap) {
   }
 }
 
-function showEmptyState() {
-  document.getElementById('brand-grid').innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📭</div><div class="empty-text">尚無監控資料<br><span style="font-size:11px;color:#334155;margin-top:6px;display:block">點「立即監控」執行第一次採集</span></div></div>`;
+function showEmptyState(msg) {
+  const hint = msg || '點「立即監控」執行第一次採集';
+  document.getElementById('brand-grid').innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📭</div><div class="empty-text">尚無監控資料<br><span style="font-size:11px;color:#334155;margin-top:6px;display:block">${hint}</span></div></div>`;
   document.getElementById('alert-table-wrap').innerHTML = `<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">尚無資料</div></div>`;
   document.getElementById('channel-bars').innerHTML = `<div style="color:#475569;font-size:12px;padding:20px 0">尚無渠道資料</div>`;
   ['kpi-alerts','kpi-articles'].forEach(id => document.getElementById(id).textContent = '0');

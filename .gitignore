@@ -39,6 +39,3 @@ node_modules/
 # IDE
 .vscode/
 .idea/
-
-# Local dependencies copy (heavy binaries)
-vendor/
