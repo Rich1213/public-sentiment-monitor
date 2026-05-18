@@ -103,6 +103,12 @@ class GoogleNewsCollector:
 
         content = title + RSS summary（不進網頁，不提取全文）
         narrative_type 欄位供報告層識別敘事類型
+
+        【設計原則】
+        Google News RSS 已透過品牌搜尋詞過濾，此層不再做 is_brand_relevant 二次驗證。
+        原因：危機事件往往使用非預期措辭（如「超商」而非「7-ELEVEN」），
+              keyword 枚舉無法涵蓋所有可能，二次過濾只會造成漏報。
+              信任 Google 搜尋的品牌相關性判斷即可。
         """
         print(f"  Fetching Google News for keyword: {self.keyword}（敘事訊號模式）...")
         raw_news = self._fetch_rss_feed(limit * 2)
@@ -111,27 +117,12 @@ class GoogleNewsCollector:
         narrative_counts: Dict[str, int] = {}
         skipped_dup = 0
 
-        from src.config.brands import get_brand_config
-        brand_config = get_brand_config(self.keyword)
-        crisis_bypass = brand_config.get("crisis_bypass", False)
-
         for item in raw_news:
             if len(articles) >= limit:
                 break
 
-            # 品牌相關性驗證
-            if not is_brand_relevant(self.keyword, item["title"], item["summary"]):
-                # crisis_bypass：若為食安危機類型，寬鬆放行（Google News 已透過搜尋詞篩選）
-                if crisis_bypass:
-                    narrative_type_check = classify_narrative(item["title"], item["summary"])
-                    if narrative_type_check == "危機曝光":
-                        print(f"  [Google News] 危機寬鬆放行：{item['title'][:45]}...")
-                    else:
-                        print(f"  [Google News] 跳過無關：{item['title'][:45]}...")
-                        continue
-                else:
-                    print(f"  [Google News] 跳過無關：{item['title'][:45]}...")
-                    continue
+            # Google News 已透過搜尋詞做品牌篩選，此處不再做 is_brand_relevant 二次驗證
+            # 避免「超商」「外食族」等非精確品牌詞的危機文章被誤殺
 
             # 去重（Google News redirect URL 每次不同，改用標題去重）
             title_key = f"gnews_title:{self.keyword}:{item['title']}"
