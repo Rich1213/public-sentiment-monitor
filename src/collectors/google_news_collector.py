@@ -85,24 +85,21 @@ class GoogleNewsCollector:
         )
 
         scraper_key = os.getenv("SCRAPERAPI_KEY", "")
-        if scraper_key:
-            # 透過 ScraperAPI 代理，解決 Google 封鎖雲端機房 IP 的問題
-            proxy_url = (
-                f"http://api.scraperapi.com?api_key={scraper_key}"
-                f"&url={urllib.parse.quote(rss_url, safe='')}"
-            )
-            print(f"  [Google News] 使用 ScraperAPI 代理採集...")
-        else:
-            proxy_url = None
-            print(f"  [Google News] 直連採集（無 ScraperAPI）...")
 
         try:
-            if proxy_url:
+            if scraper_key:
+                # ScraperAPI 代理：用 requests params 傳遞，避免雙重編碼
                 import requests as _req
-                resp = _req.get(proxy_url, timeout=30)
+                print(f"  [Google News] 使用 ScraperAPI 代理採集...")
+                resp = _req.get(
+                    "http://api.scraperapi.com",
+                    params={"api_key": scraper_key, "url": rss_url},
+                    timeout=30
+                )
                 resp.raise_for_status()
                 feed = feedparser.parse(resp.text)
             else:
+                print(f"  [Google News] 直連採集（無 ScraperAPI）...")
                 feed = feedparser.parse(rss_url)
 
             print(f"  [Google News] RSS 回傳 {len(feed.entries)} 筆")
