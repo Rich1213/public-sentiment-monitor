@@ -1,0 +1,13 @@
+# railway.toml — Railway 部署設定
+# 文件：https://docs.railway.app/reference/config-as-code
+
+[build]
+builder = "NIXPACKS"
+
+# ── Web 服務（FastAPI）────────────────────────────────────────
+[deploy]
+startCommand = "uvicorn api.app:app --host 0.0.0.0 --port $PORT"
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

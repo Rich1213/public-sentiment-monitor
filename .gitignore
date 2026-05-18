@@ -1,0 +1,41 @@
+# 環境變數（含 API 金鑰，絕對不能上傳）
+.env
+
+# Google Drive FUSE 暫存檔
+.fuse_hidden*
+
+# Claude Cowork 設定
+.claude/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# 資料庫與暫存資料
+*.db*
+*.sqlite
+*.sqlite3
+logs/
+reports/
+fb_comments_raw.json
+fb_comments_sentiment.csv
+fb_metrics.csv
+
+# Dcard session（含 Cookie）
+dcard_session.json
+
+# Node.js
+node_modules/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/

@@ -1,0 +1,29 @@
+# ── 台灣便利超商輿情監控系統 — 依賴套件 ───────────────────────
+# 安裝方式：pip install -r requirements.txt
+
+# ── 核心 ─────────────────────────────────────────────────────────
+python-dotenv>=1.0.0        # .env 環境變數讀取
+openai>=1.0.0               # NVIDIA API（OpenAI 相容介面）+ OpenAI 官方
+requests>=2.31.0            # HTTP 請求（PTT 採集、ScraperAPI）
+
+# ── 新聞 / RSS 採集 ───────────────────────────────────────────────
+feedparser>=6.0.0           # Google News RSS 解析
+
+# ── 論壇 / 社群爬蟲 ──────────────────────────────────────────────
+beautifulsoup4>=4.12.0      # PTT HTML 解析
+curl_cffi>=0.6.0            # Dcard WAF 繞過（Chrome TLS 指紋偽裝）
+
+# ── AI Providers（選用）────────────────────────────────────────
+anthropic>=0.25.0           # Anthropic Claude provider（選用）
+
+# ── Web API（Railway 部署）───────────────────────────────────────
+fastapi>=0.111.0            # REST API 框架
+uvicorn[standard]>=0.29.0   # ASGI 伺服器
+pydantic>=2.0.0             # 資料驗證（FastAPI 依賴）
+
+# ── 資料庫（Postgres 部署）──────────────────────────────────────
+psycopg2-binary>=2.9.9      # PostgreSQL 連線（Railway Postgres）
+
+# ── Word 日報產生器（Node.js，不在 pip 管理範圍）────────────────
+# 安裝方式：cd src/reporters && npm install
+# 套件：docx（見 src/reporters/package.json）

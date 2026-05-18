@@ -1,0 +1,16 @@
+{
+  "name": "public-sentiment-monitor",
+  "version": "1.0.0",
+  "description": "A professional-grade social listening and sentiment analysis system designed to track public perception of specific figures or brands.",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "docx": "^9.6.1",
+    "puppeteer": "^22.15.0"
+  }
+}
