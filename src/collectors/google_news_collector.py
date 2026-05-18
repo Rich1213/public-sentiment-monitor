@@ -92,7 +92,7 @@ class GoogleNewsCollector:
                 import requests as _req
                 print(f"  [Google News] 使用 ScraperAPI 代理採集...")
                 resp = _req.get(
-                    "http://api.scraperapi.com",
+                    "https://api.scraperapi.com",
                     params={"api_key": scraper_key, "url": rss_url},
                     timeout=30
                 )
@@ -118,7 +118,26 @@ class GoogleNewsCollector:
             return results
         except Exception as e:
             print(f"  [Google News] RSS 獲取失敗：{e}")
-            return []
+            try:
+                print("  [Google News] 改用直連 RSS fallback...")
+                feed = feedparser.parse(rss_url)
+                results = []
+                for entry in feed.entries[:limit]:
+                    summary = clean_summary(
+                        entry.get("summary", "") or entry.get("description", "")
+                    )
+                    results.append({
+                        "title":     entry.title,
+                        "link":      entry.link,
+                        "published": entry.get("published", ""),
+                        "summary":   summary,
+                        "source":    entry.get("source", {}).get("title", "Google News"),
+                    })
+                print(f"  [Google News] fallback RSS 回傳 {len(results)} 筆")
+                return results
+            except Exception as fallback_error:
+                print(f"  [Google News] fallback 也失敗：{fallback_error}")
+                return []
 
     def fetch_latest_posts(self, limit: int = 15, fresh_mode: bool = False) -> List[Dict]:
         """

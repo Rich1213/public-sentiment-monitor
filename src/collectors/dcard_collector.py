@@ -152,15 +152,8 @@ class DcardCollector:
             target = url
             if params:
                 target += ("&" if "?" in target else "?") + urllib.parse.urlencode(params)
-            api_params = {
-                "api_key": _SCRAPERAPI_KEY,
-                "url":     target,
-                "render":  "false",   # Dcard SSR 不需要 JS 執行
-            }
-            return self.session.get(
-                SCRAPERAPI_ENDPOINT, params=api_params,
-                headers=headers, timeout=60   # ScraperAPI 需要較長 timeout
-            )
+            # 不能走 curl_cffi session 打 ScraperAPI，否則會被 403。
+            return self._scraperapi_get_with_fallback(target, timeout=60)
         else:
             return self.session.get(
                 url, params=params, headers=headers, timeout=timeout
@@ -181,6 +174,16 @@ class DcardCollector:
             params={"api_key": _SCRAPERAPI_KEY, "url": target_url, "render": "false"},
             timeout=timeout,
         )
+
+    def _scraperapi_get_with_fallback(self, target_url: str, timeout: int = 60):
+        resp = self._scraperapi_get(target_url, timeout=timeout)
+        if resp.status_code == 403:
+            try:
+                print("  [Dcard] ScraperAPI 403，改用直連 fallback...")
+                return self.session.get(target_url, timeout=20)
+            except Exception:
+                return resp
+        return resp
 
     # ════════════════════════════════════════════════════════════
     # 策略一：全站搜尋 SSR
@@ -298,7 +301,7 @@ class DcardCollector:
         api_url = f"https://www.dcard.tw/service/api/v2/posts/{post_id}"
         try:
             self._delay()
-            resp = self._scraperapi_get(api_url)
+            resp = self._scraperapi_get_with_fallback(api_url)
             if resp.status_code != 200:
                 return {}
             d = resp.json()
@@ -348,7 +351,7 @@ class DcardCollector:
         try:
             self._delay()
             if _SCRAPERAPI_KEY:
-                resp = self._scraperapi_get(api_url)
+                resp = self._scraperapi_get_with_fallback(api_url)
             else:
                 resp = self.session.get(api_url, timeout=20)
 
@@ -400,15 +403,7 @@ class DcardCollector:
         try:
             self._delay()
             if _SCRAPERAPI_KEY:
-                resp = self.session.get(
-                    SCRAPERAPI_ENDPOINT,
-                    params={
-                        "api_key": _SCRAPERAPI_KEY,
-                        "url":     api_url + f"?limit={limit}",
-                        "render":  "false",
-                    },
-                    timeout=60,
-                )
+                resp = self._scraperapi_get_with_fallback(api_url + f"?limit={limit}", timeout=60)
             else:
                 resp = self.session.get(api_url, params={"limit": limit}, timeout=20)
 

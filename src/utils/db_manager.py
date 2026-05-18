@@ -1256,6 +1256,60 @@ class SentimentDB:
         finally:
             conn.close()
 
+    def get_dashboard_trend(self, days: int = 7, keywords: Optional[List[str]] = None) -> Dict[str, Dict[str, Optional[float]]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"SELECT * FROM monitoring_runs WHERE ended_at IS NOT NULL ORDER BY started_at DESC LIMIT {ph}",
+                (max(days * max(len(keywords or []), 4) * 8, 80),),
+            )
+            runs = self._adapter.fetchall_dict(c)
+            if not runs:
+                return {}
+
+            run_ids = [int(r["id"]) for r in runs]
+            run_placeholders = ",".join([ph] * len(run_ids))
+            c.execute(
+                f"""SELECT a.thread_id, a.run_id, a.score, a.analyzed_at, r.keyword, r.started_at
+                    FROM analyses a
+                    JOIN monitoring_runs r ON a.run_id = r.id
+                    WHERE a.run_id IN ({run_placeholders})""",
+                tuple(run_ids),
+            )
+            rows = [self._normalize_analysis_row(row) for row in self._adapter.fetchall_dict(c)]
+        finally:
+            conn.close()
+
+        dedup: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+        for row in rows:
+            keyword = row.get("keyword")
+            if keywords and keyword not in keywords:
+                continue
+            date = (row.get("started_at") or "")[:10]
+            if not date:
+                continue
+            key = (keyword, date, row["thread_id"])
+            prev = dedup.get(key)
+            if prev is None or (row.get("analyzed_at") or "") >= (prev.get("analyzed_at") or ""):
+                dedup[key] = row
+
+        by_brand_date: Dict[str, Dict[str, List[float]]] = {}
+        for row in dedup.values():
+            keyword = row["keyword"]
+            date = row["started_at"][:10]
+            by_brand_date.setdefault(keyword, {}).setdefault(date, []).append(float(row["score"]))
+
+        all_dates = sorted({date for brand_rows in by_brand_date.values() for date in brand_rows.keys()})[-days:]
+        trend: Dict[str, Dict[str, Optional[float]]] = {}
+        for keyword, date_map in by_brand_date.items():
+            trend[keyword] = {}
+            for date in all_dates:
+                scores = date_map.get(date, [])
+                trend[keyword][date] = round(sum(scores) / len(scores), 2) if scores else None
+        return trend
+
     def get_thread_item_id_by_platform_item_id(self, platform_item_id: str) -> Optional[int]:
         ph = self._ph()
         conn = self._adapter.get_connection()

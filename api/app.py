@@ -78,6 +78,7 @@ class DashboardTodayResponse(BaseModel):
     channel_counts: dict
     all_alerts: list
     total_articles: int
+    trend: Optional[dict] = None
 
 
 # ─────────────────────────────────────────────────────────────
@@ -159,7 +160,7 @@ def dashboard_today(
     db = SentimentDB()
     try:
         summary = db.get_dashboard_day_summary(snapshot_date=date)
-        db.save_daily_snapshots(snapshot_date=summary["snapshot_date"])
+        summary["trend"] = db.get_dashboard_trend(days=7, keywords=["7-ELEVEN", "全家", "萊爾富", "OK mart"])
         return summary
     except Exception as e:
         logger.error("查詢 dashboard today 失敗：%s", e, exc_info=True)

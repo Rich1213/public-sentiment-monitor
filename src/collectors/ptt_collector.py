@@ -60,6 +60,7 @@ MAX_RETRIES    = 3
 #   Food        — 「全家人牛排」「全家福元宵」大量誤判
 #   Hate        — 「全家」常被誤用為罵人語，大量假陽性
 TARGET_BOARDS = ["CVS", "Gossiping", "Consumer", "SocialHealth", "WomenTalk"]
+MAX_POST_AGE_DAYS = 90
 
 HEADERS = {
     "User-Agent": (
@@ -208,6 +209,13 @@ class PTTCollector:
         except Exception:
             return datetime.now().strftime("%Y-%m-%d %H:%M")
 
+    def _is_recent(self, published: str, max_days: int = MAX_POST_AGE_DAYS) -> bool:
+        try:
+            pub_dt = datetime.strptime(published[:10], "%Y-%m-%d")
+            return (datetime.now() - pub_dt).days <= max_days
+        except Exception:
+            return True
+
     # ── 從 URL 取得版板名 ────────────────────────────────────────
     def _get_board_from_url(self, url: str) -> str:
         try:
@@ -307,6 +315,7 @@ class PTTCollector:
         articles = []
         skipped_dup = 0
         skipped_samples = []
+        skipped_old = 0
         for post in raw_posts:
             if len(articles) >= limit:
                 break
@@ -318,6 +327,10 @@ class PTTCollector:
                 continue
 
             print(f"  [PTT] 提取：{post['title'][:50]}...")
+            published = self._parse_date(post["date_str"])
+            if not self._is_recent(published):
+                skipped_old += 1
+                continue
             detail    = self._fetch_post_detail(post["link"])
             matched, reason = is_relevant_with_two_stage_attribution(
                 self.keyword,
@@ -327,7 +340,6 @@ class PTTCollector:
             if not matched:
                 continue
             board     = self._get_board_from_url(post["link"])
-            published = self._parse_date(post["date_str"])
 
             # comment_count 在 PTT 語境下 = 推文(push) + 噓文(boo) + →文(neutral) 總數
             # 即「所有互動回應」，與 Dcard 的「留言數」語意略有不同，但皆表示「討論熱度」
@@ -377,6 +389,8 @@ class PTTCollector:
         if skipped_dup > 0:
             sample_text = "；".join(skipped_samples)
             print(f"  [PTT] 跳過重複 {skipped_dup} 篇" + (f"（例：{sample_text}）" if sample_text else ""))
+        if skipped_old > 0:
+            print(f"  [PTT] 過濾舊文 {skipped_old} 篇（>{MAX_POST_AGE_DAYS} 天）")
 
         print(f"  → PTT: {len(articles)} 篇完成\n")
         return articles

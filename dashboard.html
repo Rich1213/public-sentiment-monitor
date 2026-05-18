@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>台灣便利超商輿情監控儀表板</title>
+<link rel="icon" href="data:,">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -227,7 +228,9 @@
 
 <script src="./dashboard_summary.js"></script>
 <script>
-const API = 'https://web-production-7a3df.up.railway.app';
+const API = new URLSearchParams(window.location.search).get('api')
+  || localStorage.getItem('psm-api')
+  || 'https://web-production-7a3df.up.railway.app';
 const BRANDS = ['7-ELEVEN', '全家', '萊爾富', 'OK mart'];
 const CH_COLORS = { google_news: '#818cf8', ptt: '#34d399', dcard: '#fb923c', youtube: '#f87171' };
 const BRAND_COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6'];
@@ -238,29 +241,17 @@ let trendChart = null;
 
 async function loadData() {
   try {
-    const [healthRes, todayRes, runsRes] = await Promise.all([
+    const [healthRes, todayRes] = await Promise.all([
       fetch(`${API}/health`),
       fetch(`${API}/dashboard/today`),
-      fetch(`${API}/runs/recent?limit=30`)
     ]);
     const health = await healthRes.json();
     const today = await todayRes.json();
-    const runsData = await runsRes.json();
-    const completedRuns = (runsData.runs || []).filter(run => run.ended_at).slice(0, 20);
-    const detailRows = await Promise.all(
-      completedRuns.map(run => fetch(`${API}/runs/${run.id}`).then(res => res.json()).catch(() => null))
-    );
-    const recentDetailedRuns = detailRows
-      .filter(Boolean)
-      .map(row => ({
-        ...row.run,
-        analyses: row.analyses || [],
-      }));
 
     updateStatus(health, today);
     syncMonitorButton(today.active_batch || null);
     if (today.brand_map && Object.keys(today.brand_map).length > 0) {
-      processTodaySummary(today, recentDetailedRuns);
+      processTodaySummary(today);
     } else {
       showEmptyState();
     }
@@ -289,7 +280,7 @@ function syncMonitorButton(activeBatch) {
   btn.textContent = '↻ 更新輿情資料';
 }
 
-function processTodaySummary(today, recentRuns) {
+function processTodaySummary(today) {
   const brandMap = today.brand_map || {};
   const channelCounts = today.channel_counts || { google_news: 0, ptt: 0, dcard: 0, youtube: 0 };
   allAlerts = (today.all_alerts || []).map(item => ({ ...item, score: normalizeScore(item.score) }));
@@ -297,7 +288,7 @@ function processTodaySummary(today, recentRuns) {
 
   renderKPIs(brandMap, allAlerts.length, totalArticles);
   renderBrandCards(brandMap);
-  renderTrend(recentRuns || []);
+  renderTrend(today.trend || {});
   renderChannelBars(channelCounts);
   renderAlertTable(allAlerts);
   renderPRStrategy(brandMap);
@@ -351,22 +342,9 @@ function renderBrandCards(brandMap) {
   }).join('');
 }
 
-function renderTrend(runs) {
+function renderTrend(trendData) {
   const ctx = document.getElementById('trend-chart').getContext('2d');
-  const byDate = {};
-  BRANDS.forEach(b => byDate[b] = {});
-  runs.forEach(run => {
-    const date = (run.started_at || run.ended_at || '').split('T')[0];
-    const kw = run.keyword;
-    if (!date || !kw || !BRANDS.includes(kw)) return;
-    if (!byDate[kw][date]) byDate[kw][date] = { sum: 0, cnt: 0 };
-    (run.analyses || []).forEach(a => {
-      byDate[kw][date].sum += normalizeScore(a.score);
-      byDate[kw][date].cnt++;
-    });
-  });
-
-  const dates = [...new Set(runs.map(r => (r.started_at || r.ended_at || '').split('T')[0]).filter(Boolean))].sort().slice(-7);
+  const dates = [...new Set(Object.values(trendData).flatMap(dateMap => Object.keys(dateMap || {})))].sort().slice(-7);
   if (trendChart) trendChart.destroy();
 
   trendChart = new Chart(ctx, {
@@ -375,10 +353,7 @@ function renderTrend(runs) {
       labels: dates.map(d => d.slice(5)),
       datasets: BRANDS.map((b, i) => ({
         label: b,
-        data: dates.map(d => {
-          const v = byDate[b][d];
-          return v && v.cnt > 0 ? parseFloat((v.sum / v.cnt).toFixed(2)) : null;
-        }),
+        data: dates.map(d => trendData?.[b]?.[d] ?? null),
         borderColor: BRAND_COLORS[i],
         backgroundColor: 'transparent',
         tension: 0.3,
