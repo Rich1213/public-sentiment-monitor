@@ -272,6 +272,20 @@ function updateStatus(health) {
   document.getElementById('last-update').textContent = `更新：${ts.toLocaleTimeString('zh-TW')}`;
 }
 
+// ── 分數相容層 ─────────────────────────────────────────────────
+// 舊版 LLM 輸出 0.0-1.0 float；新版輸出 1-5 整數
+// 統一對應到 1-5，讓新舊資料都能正確顯示
+function normalizeScore(rawScore) {
+  if (rawScore === null || rawScore === undefined) return 0;
+  if (rawScore >= 1) return Math.round(rawScore); // 新版：1-5 整數，直接使用
+  // 舊版：0.0-1.0 對應到 1-5
+  if (rawScore >= 0.85) return 5;
+  if (rawScore >= 0.70) return 4;
+  if (rawScore >= 0.50) return 3;
+  if (rawScore >= 0.30) return 2;
+  return 1;
+}
+
 function processRuns(runs) {
   // Group by keyword (brand)
   const brandMap = {};
@@ -299,19 +313,20 @@ function processRuns(runs) {
         if (s === '正面') bm.pos++;
         else if (s === '負面') bm.neg++;
         else bm.neu++;
-        bm.scores.push(a.score || 0);
+        const normScore = normalizeScore(a.score);
+        bm.scores.push(normScore);
         const ch = a.channel || '';
         if (ch in channelCounts && !isDup) channelCounts[ch]++;
 
-        // 警報門檻：公關風險 >= 3 且負面
-        if ((a.score || 0) >= 3 && s === '負面') {
+        // 警報門檻：公關風險 >= 3（⚠️ 中度關注以上）且負面
+        if (normScore >= 3 && s === '負面') {
           const alertKey = `${ch}:${a.title}`;
           if (!seenAlerts.has(alertKey)) {
             seenAlerts.add(alertKey);
             totalAlerts++;
             allAlerts.push({
               brand: kw, channel: ch, title: a.title || '—',
-              url: a.url || '#', score: a.score, theme: a.theme || '—',
+              url: a.url || '#', score: normScore, theme: a.theme || '—',
               published: a.published_at || ''
             });
           }
@@ -391,7 +406,7 @@ function renderTrend(runs) {
     if (!date || !kw || !BRANDS.includes(kw)) return;
     if (!byDate[kw][date]) byDate[kw][date] = { sum: 0, cnt: 0 };
     (run.analyses || []).forEach(a => {
-      byDate[kw][date].sum += (a.score || 0);
+      byDate[kw][date].sum += normalizeScore(a.score);
       byDate[kw][date].cnt++;
     });
   });
@@ -522,8 +537,70 @@ function showEmptyState(msg) {
 
 // ── 採集進度追蹤 ─────────────────────────────────────────
 const MONITOR_KEYWORDS = ['7-ELEVEN', '全家', '萊爾富', 'OK mart', '超商食安'];
+const MONITOR_PROGRESS_KEY = 'psm-monitor-triggered-at';
 let monitorPoller = null;
 let monitorTriggeredAt = null;
+
+function setMonitorTriggeredAt(isoString) {
+  monitorTriggeredAt = isoString ? new Date(isoString) : null;
+  if (isoString) localStorage.setItem(MONITOR_PROGRESS_KEY, isoString);
+  else localStorage.removeItem(MONITOR_PROGRESS_KEY);
+}
+
+function inferBatchStart(runs) {
+  const monitorRuns = runs
+    .filter(r => MONITOR_KEYWORDS.includes(r.keyword))
+    .sort((a, b) => new Date(a.started_at) - new Date(b.started_at));
+
+  if (monitorRuns.length === 0) return null;
+
+  const batch = [monitorRuns[monitorRuns.length - 1]];
+  for (let i = monitorRuns.length - 2; i >= 0; i--) {
+    const curr = new Date(batch[0].started_at);
+    const prev = new Date(monitorRuns[i].started_at);
+    const gapMinutes = (curr - prev) / 60000;
+    if (gapMinutes > 15) break;
+    batch.unshift(monitorRuns[i]);
+  }
+  return batch[0].started_at;
+}
+
+async function restoreMonitorProgress() {
+  const savedTriggeredAt = localStorage.getItem(MONITOR_PROGRESS_KEY);
+  if (savedTriggeredAt) setMonitorTriggeredAt(savedTriggeredAt);
+
+  try {
+    const res = await fetch(`${API}/runs/recent?limit=50`);
+    const data = await res.json();
+    const runs = data.runs || [];
+    const activeRun = runs.find(r => !r.ended_at && MONITOR_KEYWORDS.includes(r.keyword));
+
+    if (activeRun) {
+      if (!monitorTriggeredAt) {
+        const inferredStart = inferBatchStart(runs) || activeRun.started_at;
+        setMonitorTriggeredAt(inferredStart);
+      }
+      showProgressPanel();
+      startProgressPoller();
+      await pollMonitorProgress();
+      return;
+    }
+
+    if (monitorTriggeredAt) {
+      const ageMinutes = (Date.now() - monitorTriggeredAt.getTime()) / 60000;
+      if (ageMinutes <= 30) {
+        showProgressPanel();
+        startProgressPoller();
+        await pollMonitorProgress();
+        return;
+      }
+    }
+  } catch (_) {
+    // restore 失敗時不要阻擋主畫面載入
+  }
+
+  hideProgressPanel();
+}
 
 async function triggerMonitor() {
   const btn = document.getElementById('run-btn');
@@ -539,10 +616,12 @@ async function triggerMonitor() {
       body: JSON.stringify({ keywords: MONITOR_KEYWORDS, fresh: false })
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
 
-    monitorTriggeredAt = new Date();
+    setMonitorTriggeredAt(data.triggered_at || new Date().toISOString());
     showProgressPanel();
     startProgressPoller();
+    pollMonitorProgress();
 
   } catch (e) {
     btn.disabled = false;
@@ -559,6 +638,7 @@ function showProgressPanel() {
 
 function hideProgressPanel() {
   document.getElementById('monitor-progress').style.display = 'none';
+  setMonitorTriggeredAt(null);
   const btn = document.getElementById('run-btn');
   const refreshBtn = document.getElementById('refresh-btn');
   btn.disabled = false;
@@ -583,9 +663,13 @@ async function pollMonitorProgress() {
     const data = await res.json();
     const runs = data.runs || [];
 
-    // 只看觸發後的 runs
-    const triggeredTime = monitorTriggeredAt ? monitorTriggeredAt.toISOString() : '';
-    const newRuns = runs.filter(r => r.started_at >= triggeredTime.slice(0, 16));
+    if (!monitorTriggeredAt) {
+      const inferredStart = inferBatchStart(runs);
+      if (inferredStart) setMonitorTriggeredAt(inferredStart);
+    }
+
+    const triggeredMs = monitorTriggeredAt ? monitorTriggeredAt.getTime() : 0;
+    const newRuns = runs.filter(r => new Date(r.started_at).getTime() >= triggeredMs);
 
     const activeRun  = newRuns.find(r => !r.ended_at);   // 進行中
     const doneRuns   = newRuns.filter(r => r.ended_at);  // 已完成
@@ -623,6 +707,7 @@ async function pollMonitorProgress() {
   }
 }
 
+restoreMonitorProgress();
 loadData();
 setInterval(loadData, 5 * 60 * 1000);
 </script>

@@ -31,6 +31,7 @@ from typing import List, Dict, Optional
 from collections import Counter
 
 from src.config.brands import CHANNEL_LAYER, CHANNEL_DISPLAY
+from src.utils.score_utils import normalize_score, ALERT_THRESHOLD as DEFAULT_ALERT_THRESHOLD
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -194,7 +195,7 @@ LOW_COUNT_THRESHOLD = 3
 # ─────────────────────────────────────────────────────────────────
 
 class DailyReporter:
-    ALERT_THRESHOLD = 0.7
+    ALERT_THRESHOLD = DEFAULT_ALERT_THRESHOLD
 
     def __init__(self, db_path: str = "sentiment_monitor.db",
                  primary_brand: str = "7-ELEVEN",
@@ -236,7 +237,11 @@ class DailyReporter:
                 WHERE a.run_id IN ({placeholders})
                 ORDER BY a.score DESC
             """, run_ids)
-            return [dict(r) for r in c.fetchall()]
+            rows = [dict(r) for r in c.fetchall()]
+            for row in rows:
+                row["raw_score"] = row.get("score")
+                row["score"] = normalize_score(row.get("score"))
+            return rows
 
     def _get_latest_pr_report(self, run_ids: List[int]) -> Optional[Dict]:
         if not run_ids:

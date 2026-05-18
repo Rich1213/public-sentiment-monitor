@@ -25,15 +25,32 @@ _DCARD_EXCLUDE = [
     "面試通知", "錄取", "應徵", "工讀生", "職缺",
 ]
 
+GENERIC_CRISIS_TERMS = [
+    "超商 食安",
+    "超商 異物",
+    "超商 活蟲",
+    "超商 食物中毒",
+    "超商 食品安全",
+    "超商 食品問題",
+    "便利商店 活蟲",
+    "便利商店 異物",
+    "便利商店 食物中毒",
+]
+
+GENERIC_CRISIS_KEYWORDS = [
+    "超商", "便利商店", "食安", "食品安全", "異物",
+    "活蟲", "蟲", "食物中毒", "食品問題", "下架",
+]
+
 BRANDS: Dict[str, dict] = {
 
     "7-ELEVEN": {
         "display_name": "7-ELEVEN（統一超商）",
         "search_queries": {
-            "google_news": '7-ELEVEN OR 統一超商 OR "7-11" OR 小七 OR (統一超商 食安) OR (7-11 食品) OR (小七 食安)',
-            "ptt":         "7-11 OR 統一超商 OR 小七 OR 7ELEVEN",
+            "google_news": '7-ELEVEN OR 統一超商 OR "7-11" OR 小七 OR (統一超商 食安) OR (7-11 食品) OR (小七 食安) OR (超商 活蟲) OR (超商 異物)',
+            "ptt":         "7-11 OR 統一超商 OR 小七 OR 7ELEVEN OR 超商活蟲 OR 超商異物",
             "dcard":       "7-ELEVEN OR 統一超商 OR 小七 OR 711 OR 7-11",
-            "youtube":     "7-ELEVEN 統一超商 OR 小七 OR 7-11超商",
+            "youtube":     "7-ELEVEN 統一超商 OR 小七 OR 7-11超商 OR 超商 活蟲 OR 超商 異物",
         },
         "validation_keywords": [
             "7-eleven", "7-11", "7eleven", "711",
@@ -46,10 +63,10 @@ BRANDS: Dict[str, dict] = {
     "全家": {
         "display_name": "全家 FamilyMart",
         "search_queries": {
-            "google_news": '全家便利商店 OR FamilyMart台灣 OR 全家超商 OR (全家 食安) OR (全家 食品安全)',
-            "ptt":         "全家便利 OR FamilyMart OR 全家超商 OR 全家超市",
+            "google_news": '全家便利商店 OR FamilyMart台灣 OR 全家超商 OR (全家 食安) OR (全家 食品安全) OR (超商 活蟲) OR (超商 異物)',
+            "ptt":         "全家便利 OR FamilyMart OR 全家超商 OR 全家超市 OR 超商活蟲 OR 超商異物",
             "dcard":       "全家便利 OR FamilyMart OR 全家超商 OR 全家便利店",
-            "youtube":     "全家便利商店 OR FamilyMart台灣",
+            "youtube":     "全家便利商店 OR FamilyMart台灣 OR 超商 活蟲 OR 超商 異物",
         },
         "validation_keywords": [
             "全家便利", "familymart", "全家超商",
@@ -62,10 +79,10 @@ BRANDS: Dict[str, dict] = {
     "萊爾富": {
         "display_name": "萊爾富 Hi-Life",
         "search_queries": {
-            "google_news": '萊爾富 OR Hi-Life便利商店 OR (萊爾富 食安)',
-            "ptt":         "萊爾富 OR Hi-Life OR hilife",
+            "google_news": '萊爾富 OR Hi-Life便利商店 OR (萊爾富 食安) OR (超商 活蟲) OR (超商 異物)',
+            "ptt":         "萊爾富 OR Hi-Life OR hilife OR 超商活蟲 OR 超商異物",
             "dcard":       "萊爾富 OR hilife OR hi-life",
-            "youtube":     "萊爾富 Hi-Life便利商店",
+            "youtube":     "萊爾富 Hi-Life便利商店 OR 超商 活蟲 OR 超商 異物",
         },
         "validation_keywords": [
             "萊爾富", "hi-life", "hilife", "hi life",
@@ -77,10 +94,10 @@ BRANDS: Dict[str, dict] = {
     "OK mart": {
         "display_name": "OK mart",
         "search_queries": {
-            "google_news": 'OK mart OR OK超商 台灣 OR (OK超商 食安)',
-            "ptt":         "OK超商 OR OKmart OR OK mart OR OK便利",
+            "google_news": 'OK mart OR OK超商 台灣 OR (OK超商 食安) OR (超商 活蟲) OR (超商 異物)',
+            "ptt":         "OK超商 OR OKmart OR OK mart OR OK便利 OR 超商活蟲 OR 超商異物",
             "dcard":       "OK mart OR OK超商 OR okmart",
-            "youtube":     "OK mart OK超商 台灣",
+            "youtube":     "OK mart OK超商 台灣 OR 超商 活蟲 OR 超商 異物",
         },
         "validation_keywords": [
             "ok mart", "ok超商", "okmart", "ok便利", "來來超商",
@@ -93,10 +110,10 @@ BRANDS: Dict[str, dict] = {
     "超商食安": {
         "display_name": "超商食安危機監控",
         "search_queries": {
-            "google_news": "超商 食安 OR 超商 異物 OR 超商 食品安全 OR 超商 活蟲 OR 超商 食品問題 OR 超商 下架 OR 超商 食物中毒",
-            "ptt":         "超商食安 OR 超商異物 OR 超商蟲",
+            "google_news": " OR ".join(GENERIC_CRISIS_TERMS + ["超商 下架"]),
+            "ptt":         "超商食安 OR 超商異物 OR 超商蟲 OR 超商活蟲 OR 便利商店活蟲 OR 超商食物中毒",
             "dcard":       "超商食安 OR 超商異物 OR 超商食品問題",
-            "youtube":     "超商食安 OR 超商異物 OR 便利商店食品安全",
+            "youtube":     " OR ".join(GENERIC_CRISIS_TERMS),
         },
         "validation_keywords": [
             "超商", "便利商店", "7-11", "全家", "萊爾富", "ok mart",
@@ -155,15 +172,60 @@ def get_search_query(keyword: str, channel: str) -> str:
     return config["search_queries"].get(channel, keyword)
 
 
-def is_brand_relevant(keyword: str, title: str, content: str = "") -> bool:
-    """判斷文章是否真的與該品牌相關。"""
+def get_search_terms(keyword: str, channel: str) -> List[str]:
+    """
+    將設定中的搜尋字串展開為 term list。
+    供不支援 OR 或需要多輪搜尋的 collector 使用。
+    """
+    query = get_search_query(keyword, channel)
+    return [t.strip() for t in query.split(" OR ") if t.strip()]
+
+
+def is_direct_brand_match(keyword: str, title: str, content: str = "") -> bool:
     config = get_brand_config(keyword)
     validation_kws = config.get("validation_keywords", [keyword.lower()])
-    exclude_kws    = config.get("exclude_keywords", [])
-    combined = (title + " " + content[:500]).lower()
-    if any(ex.lower() in combined for ex in exclude_kws):
-        return False
+    combined = (title + " " + content[:1000]).lower()
     return any(vk.lower() in combined for vk in validation_kws)
+
+
+def is_generic_crisis_match(title: str, content: str = "") -> bool:
+    combined = (title + " " + content[:1000]).lower()
+    has_generic_subject = any(kw in combined for kw in ["超商", "便利商店"])
+    has_crisis_signal = any(kw in combined for kw in GENERIC_CRISIS_KEYWORDS if kw not in ("超商", "便利商店"))
+    return has_generic_subject and has_crisis_signal
+
+
+def is_relevant_with_two_stage_attribution(keyword: str, title: str, content: str = "") -> tuple:
+    """
+    兩階段歸因：
+      1. 直接品牌命中 → 收
+      2. generic 危機文：
+         - keyword=超商食安 → 收
+         - 其他品牌只有在內容補到品牌線索時才收
+    回傳 (matched, reason)。
+    """
+    config = get_brand_config(keyword)
+    exclude_kws = config.get("exclude_keywords", [])
+    combined = (title + " " + content[:1000]).lower()
+    if any(ex.lower() in combined for ex in exclude_kws):
+        return False, "excluded"
+
+    if keyword == "超商食安" and is_generic_crisis_match(title, content):
+        return True, "generic_crisis"
+
+    if is_direct_brand_match(keyword, title, content):
+        return True, "brand_signal"
+
+    if not is_generic_crisis_match(title, content):
+        return False, "no_match"
+
+    return False, "generic_only"
+
+
+def is_brand_relevant(keyword: str, title: str, content: str = "") -> bool:
+    """判斷文章是否真的與該品牌相關。"""
+    matched, _ = is_relevant_with_two_stage_attribution(keyword, title, content)
+    return matched
 
 
 def get_channel_layer(channel: str) -> str:

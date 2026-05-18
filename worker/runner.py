@@ -39,11 +39,11 @@ if str(_PROJECT_ROOT) not in sys.path:
 load_dotenv(_PROJECT_ROOT / ".env")
 
 from src.utils.logger import get_logger
+from src.utils.score_utils import normalize_score, ALERT_THRESHOLD
 logger = get_logger(__name__)
 
 # ── 採集與警報設定 ───────────────────────────────────────────────
 DEFAULT_KEYWORDS     = ["7-ELEVEN", "全家", "萊爾富", "OK mart", "超商食安"]
-ALERT_THRESHOLD      = float(os.getenv("ALERT_THRESHOLD", "0.7"))
 FETCH_LIMIT          = int(os.getenv("FETCH_LIMIT", "15"))   # 提高以降低漏網率
 INTER_ARTICLE_DELAY  = float(os.getenv("INTER_ARTICLE_DELAY", "1.5"))   # NVIDIA 40 req/min 保護
 INTER_BRAND_COOLDOWN = int(os.getenv("INTER_BRAND_COOLDOWN", "60"))      # 品牌間冷卻（秒）
@@ -147,6 +147,7 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
                 "theme": "分析失敗", "reason": str(e),
                 "voice_source": "未知", "analyzed_with": "標題",
             }
+        analysis["score"] = normalize_score(analysis.get("score"))
         analyses.append(analysis)
 
         # 寫入 DB

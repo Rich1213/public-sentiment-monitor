@@ -410,7 +410,7 @@ function buildPrimaryDeepDive() {
   // 高強度負面文章（跨渠道）
   elems.push(subTitle(
     primary.alert_articles && primary.alert_articles.length > 0
-      ? `⚠️ 高強度負面警報文章（${primary.alert_count} 篇，強度 ≥ ${0.7}）`
+      ? `⚠️ 高強度負面警報文章（${primary.alert_count} 篇，風險等級 ≥ 3）`
       : "✅ 本日無高強度負面文章"
     , primary.alert_count > 0 ? C.negative : C.positive
   ));

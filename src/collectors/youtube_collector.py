@@ -24,7 +24,7 @@ from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional
 
 from src.utils.db_manager import SentimentDB
-from src.config.brands import get_search_query
+from src.config.brands import get_search_terms, is_relevant_with_two_stage_attribution
 
 YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
 VIEWS_THRESHOLD  = int(os.getenv("YOUTUBE_VIEWS_THRESHOLD", "10000"))
@@ -40,19 +40,19 @@ class YouTubeCollector:
         self.keyword      = keyword
         self.db           = db
         self.api_key      = os.getenv("YOUTUBE_API_KEY", "")
-        self.search_query = get_search_query(keyword, "youtube")
+        self.search_terms = get_search_terms(keyword, "youtube")
 
         if not self.api_key:
             raise ValueError("YOUTUBE_API_KEY 環境變數未設定")
 
     # ── 搜尋影片 ─────────────────────────────────────────────────
 
-    def _search_videos(self, max_results: int = 20) -> List[Dict]:
-        """搜尋相關影片，回傳基本資訊列表。"""
+    def _search_videos_for_term(self, term: str, max_results: int = 20) -> List[Dict]:
+        """對單一搜尋詞搜尋相關影片。"""
         url = f"{YOUTUBE_API_BASE}/search"
         params = {
             "key":        self.api_key,
-            "q":          self.search_query,
+            "q":          term,
             "part":       "snippet",
             "type":       "video",
             "regionCode": "TW",
@@ -71,12 +71,34 @@ class YouTubeCollector:
                     "channel":     it["snippet"]["channelTitle"],
                     "published":   it["snippet"]["publishedAt"],
                     "description": it["snippet"].get("description", "")[:200],
+                    "matched_term": term,
                 }
                 for it in items
             ]
         except Exception as e:
-            print(f"  [YouTube] 搜尋失敗：{e}")
+            print(f"  [YouTube] 搜尋失敗 ({term})：{e}")
             return []
+
+    def _search_videos(self, max_results: int = 20) -> List[Dict]:
+        """
+        YouTube search API 不可靠支援 OR 語法，改為逐 term 搜尋再合併去重。
+        """
+        seen_ids = set()
+        merged = []
+        per_term_limit = max(5, min(max_results, 10))
+
+        for term in self.search_terms:
+            videos = self._search_videos_for_term(term, max_results=per_term_limit)
+            added = 0
+            for video in videos:
+                if video["video_id"] in seen_ids:
+                    continue
+                seen_ids.add(video["video_id"])
+                merged.append(video)
+                added += 1
+            print(f"  [YouTube/search] 「{term}」新增 {added} 支")
+
+        return merged[:max_results]
 
     # ── 批次查詢影片詳情（觀看數）───────────────────────────────
 
@@ -145,7 +167,8 @@ class YouTubeCollector:
 
         content = 影片標題 + 描述 + 熱門留言（最多 COMMENTS_PER_VIDEO 則）
         """
-        print(f"  Fetching YouTube for keyword: {self.keyword}...")
+        terms_str = " / ".join(self.search_terms)
+        print(f"  Fetching YouTube for keyword: {self.keyword}（搜尋詞：{terms_str}）...")
 
         if not self.api_key:
             print("  [YouTube] YOUTUBE_API_KEY 未設定，跳過")
@@ -212,7 +235,15 @@ class YouTubeCollector:
                 content_parts.append(comment_block)
             content = "\n".join(content_parts)
 
-            print(f"  [YouTube] [{v['reason']}] {title[:50]}... ({len(comments)} 則留言)")
+            matched, reason = is_relevant_with_two_stage_attribution(
+                self.keyword,
+                title,
+                content,
+            )
+            if not matched:
+                continue
+
+            print(f"  [YouTube] [{v['reason']}/{reason}] {title[:50]}... ({len(comments)} 則留言)")
 
             article = {
                 "title":         title,

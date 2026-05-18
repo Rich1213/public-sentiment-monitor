@@ -31,7 +31,12 @@ from datetime import datetime
 
 from src.utils.content_extractor import ContentExtractor
 from src.utils.db_manager import SentimentDB
-from src.config.brands import get_search_query, is_brand_relevant
+from src.config.brands import (
+    get_search_terms,
+    is_direct_brand_match,
+    is_generic_crisis_match,
+    is_relevant_with_two_stage_attribution,
+)
 
 # 關閉 InsecureRequestWarning（PTT SSL 較舊）
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -77,9 +82,7 @@ class PTTCollector:
         self.keyword      = keyword
         self.db           = db
         self.extractor    = ContentExtractor()
-        raw_query         = get_search_query(keyword, "ptt")
-        # PTT 不支援 OR 語法 → 拆分為獨立搜尋詞清單
-        self.search_terms = [t.strip() for t in raw_query.split(" OR ") if t.strip()]
+        self.search_terms = get_search_terms(keyword, "ptt")
         self.session      = self._init_session()
 
     # ── Session 初始化 ───────────────────────────────────────────
@@ -145,7 +148,10 @@ class PTTCollector:
                 meta_date = item.select_one(".meta .date")
                 title     = title_el.text.strip()
 
-                if not is_brand_relevant(self.keyword, title):
+                if not (
+                    is_direct_brand_match(self.keyword, title)
+                    or is_generic_crisis_match(title)
+                ):
                     continue
 
                 results.append({
@@ -293,18 +299,33 @@ class PTTCollector:
         terms_str = " / ".join(self.search_terms)
         print(f"  Fetching PTT posts for keyword: {self.keyword}（搜尋詞：{terms_str}）...")
         raw_posts = self._search_all_boards(limit * 2)
+        existing_links = (
+            self.db.get_existing_threads([post["link"] for post in raw_posts])
+            if (not fresh_mode and self.db and raw_posts) else set()
+        )
 
         articles = []
+        skipped_dup = 0
+        skipped_samples = []
         for post in raw_posts:
             if len(articles) >= limit:
                 break
 
-            if not fresh_mode and self.db and self.db.is_duplicate(post["link"]):
-                print(f"  [PTT] 跳過重複：{post['title'][:30]}")
+            if post["link"] in existing_links:
+                skipped_dup += 1
+                if len(skipped_samples) < 5:
+                    skipped_samples.append(post["title"][:30])
                 continue
 
             print(f"  [PTT] 提取：{post['title'][:50]}...")
             detail    = self._fetch_post_detail(post["link"])
+            matched, reason = is_relevant_with_two_stage_attribution(
+                self.keyword,
+                post["title"],
+                detail["content"],
+            )
+            if not matched:
+                continue
             board     = self._get_board_from_url(post["link"])
             published = self._parse_date(post["date_str"])
 
@@ -328,6 +349,8 @@ class PTTCollector:
                 "push_items":    detail["push_items"],
             }
 
+            print(f"  [PTT] 歸因：{reason}")
+
             if self.db:
                 thread_id = self.db.save_thread(
                     url          = post["link"],
@@ -350,6 +373,10 @@ class PTTCollector:
 
             # 文章間短暫延遲
             time.sleep(random.uniform(0.5, 1.2))
+
+        if skipped_dup > 0:
+            sample_text = "；".join(skipped_samples)
+            print(f"  [PTT] 跳過重複 {skipped_dup} 篇" + (f"（例：{sample_text}）" if sample_text else ""))
 
         print(f"  → PTT: {len(articles)} 篇完成\n")
         return articles

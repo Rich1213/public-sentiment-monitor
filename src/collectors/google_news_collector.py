@@ -29,7 +29,7 @@ import re
 from typing import List, Dict, Optional
 
 from src.utils.db_manager import SentimentDB
-from src.config.brands import get_search_query, is_brand_relevant
+from src.config.brands import get_search_query, is_relevant_with_two_stage_attribution
 
 
 # ── 敘事類型關鍵詞分類 ───────────────────────────────────────────
@@ -135,21 +135,30 @@ class GoogleNewsCollector:
         """
         print(f"  Fetching Google News for keyword: {self.keyword}（敘事訊號模式）...")
         raw_news = self._fetch_rss_feed(limit * 2)
+        title_keys = [f"gnews_title:{self.keyword}:{item['title']}" for item in raw_news]
+        existing_keys = (
+            self.db.get_existing_threads(title_keys)
+            if (not fresh_mode and self.db and title_keys) else set()
+        )
 
         articles = []
         narrative_counts: Dict[str, int] = {}
         skipped_dup = 0
 
-        for item in raw_news:
+        for item, title_key in zip(raw_news, title_keys):
             if len(articles) >= limit:
                 break
 
-            # Google News 已透過搜尋詞做品牌篩選，此處不再做 is_brand_relevant 二次驗證
-            # 避免「超商」「外食族」等非精確品牌詞的危機文章被誤殺
+            matched, reason = is_relevant_with_two_stage_attribution(
+                self.keyword,
+                item["title"],
+                item["summary"],
+            )
+            if not matched:
+                continue
 
             # 去重（Google News redirect URL 每次不同，改用標題去重）
-            title_key = f"gnews_title:{self.keyword}:{item['title']}"
-            if not fresh_mode and self.db and self.db.is_duplicate(title_key):
+            if title_key in existing_keys:
                 skipped_dup += 1
                 continue
 
@@ -162,7 +171,7 @@ class GoogleNewsCollector:
             if item["summary"] and item["summary"] != item["title"]:
                 content = item["title"] + "\n" + item["summary"]
 
-            print(f"  [Google News] [{narrative_type}] {item['title'][:50]}...")
+            print(f"  [Google News] [{narrative_type}/{reason}] {item['title'][:50]}...")
 
             article = {
                 "title":          item["title"],

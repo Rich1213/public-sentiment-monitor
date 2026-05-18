@@ -49,7 +49,7 @@ python main.py --fresh             # 強制重新採集
 | `TELEGRAM_CHAT_ID` | ✅ | 接收警報的 Chat ID |
 | `MONITOR_KEYWORDS` | — | 監控品牌（逗號分隔，預設監控四大品牌） |
 | `FETCH_LIMIT` | — | 每渠道採集上限（預設 10）|
-| `ALERT_THRESHOLD` | — | 負面警報閾值，0.0～1.0（預設 0.7）|
+| `ALERT_THRESHOLD` | — | 負面警報閾值，1～5（預設 3）|
 
 ---
 

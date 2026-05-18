@@ -27,6 +27,8 @@ import logging
 from datetime import datetime
 from typing import Optional, List, Dict, Any, Tuple
 
+from src.utils.score_utils import normalize_score, is_legacy_score
+
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────────────────────
@@ -565,7 +567,7 @@ class SentimentDB:
                 ORDER BY a.analyzed_at""",
                 (run_id,)
             )
-            return self._adapter.fetchall_dict(c)
+            return [self._normalize_analysis_row(row) for row in self._adapter.fetchall_dict(c)]
         finally:
             conn.close()
 
@@ -593,6 +595,33 @@ class SentimentDB:
             c = conn.cursor()
             c.execute(f"SELECT 1 FROM threads WHERE id = {ph}", (thread_id,))
             return c.fetchone() is not None
+        finally:
+            conn.close()
+
+    def get_existing_threads(self, urls: List[str]) -> set:
+        """
+        批次查詢已存在的 thread key（URL 或 title_key）。
+        回傳原始輸入字串集合，供採集器快速過濾。
+        """
+        if not urls:
+            return set()
+
+        url_to_id = {url: hashlib.md5(url.encode()).hexdigest() for url in urls}
+        ids = list(url_to_id.values())
+        ph = self._ph()
+        placeholders = ",".join([ph] * len(ids))
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"SELECT id FROM threads WHERE id IN ({placeholders})",
+                tuple(ids)
+            )
+            existing_ids = {
+                row[0] if self._adapter.is_postgres else row["id"]
+                for row in c.fetchall()
+            }
+            return {url for url, thread_id in url_to_id.items() if thread_id in existing_ids}
         finally:
             conn.close()
 
@@ -698,6 +727,7 @@ class SentimentDB:
         analyzed_content: str = "",
     ):
         ph = self._ph()
+        normalized_score = normalize_score(analysis.get("score"))
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
@@ -717,7 +747,7 @@ class SentimentDB:
                 (
                     thread_id, run_id, analyzed_content,
                     analysis.get("sentiment"),
-                    analysis.get("score"),
+                    normalized_score,
                     analysis.get("theme"),
                     analysis.get("reason"),
                     analysis.get("voice_source"),
@@ -801,7 +831,8 @@ class SentimentDB:
                 f"SELECT a.sentiment, a.score FROM analyses a ORDER BY a.analyzed_at DESC LIMIT {ph}",
                 (limit,)
             )
-            return c.fetchall()
+            rows = c.fetchall()
+            return [(row[0], normalize_score(row[1])) for row in rows]
         finally:
             conn.close()
 
@@ -819,9 +850,46 @@ class SentimentDB:
                 ORDER BY a.analyzed_at""",
                 (run_id,)
             )
-            return self._adapter.fetchall_dict(c)
+            return [self._normalize_analysis_row(row) for row in self._adapter.fetchall_dict(c)]
         finally:
             conn.close()
+
+    def backfill_legacy_scores(self) -> int:
+        """
+        將 analyses 內舊版 0.x 分數回填成 1–5 整數。
+        回傳更新筆數。
+        """
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(f"SELECT id, score FROM analyses WHERE score > 0 AND score < 1")
+            rows = c.fetchall()
+            updates = []
+            for row in rows:
+                analysis_id = row[0] if self._adapter.is_postgres else row["id"]
+                score = row[1] if self._adapter.is_postgres else row["score"]
+                if is_legacy_score(score):
+                    updates.append((normalize_score(score), analysis_id))
+
+            if not updates:
+                return 0
+
+            c.executemany(
+                f"UPDATE analyses SET score = {ph} WHERE id = {ph}",
+                updates,
+            )
+            conn.commit()
+            return len(updates)
+        finally:
+            conn.close()
+
+    @staticmethod
+    def _normalize_analysis_row(row: Dict[str, Any]) -> Dict[str, Any]:
+        data = dict(row)
+        data["raw_score"] = data.get("score")
+        data["score"] = normalize_score(data.get("score"))
+        return data
 
 
 # ── 快速測試 ─────────────────────────────────────────────────

@@ -11,6 +11,8 @@ from collections import Counter
 from dotenv import load_dotenv
 load_dotenv()
 
+from src.utils.score_utils import normalize_score, ALERT_THRESHOLD
+
 
 class PRAdvisor:
     def __init__(self, router=None):
@@ -127,13 +129,13 @@ class PRAdvisor:
         """根據分析結果決定走哪條軌道。"""
         sentiments = [a.get('sentiment', '未知') for a in analyses]
         counts = Counter(sentiments)
-        avg_score = sum(a.get('score', 0) for a in analyses) / max(len(analyses), 1)
+        avg_score = sum(normalize_score(a.get('score', 0)) for a in analyses) / max(len(analyses), 1)
 
         negative = counts.get('負面', 0)
         positive = counts.get('正面', 0)
         total = len(analyses)
 
-        if negative > total / 2 or (negative >= 2 and avg_score >= 0.7):
+        if negative > total / 2 or (negative >= 2 and avg_score >= ALERT_THRESHOLD):
             return "A"
         elif positive > total / 2:
             return "B"
