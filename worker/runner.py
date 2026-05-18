@@ -165,6 +165,31 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
             except Exception as e:
                 logger.warning("分析結果儲存失敗 [%s]：%s", article.get("link", "?"), e)
 
+            if article.get("channel") == "youtube":
+                for comment in article.get("analysis_comment_items", []):
+                    try:
+                        comment_analysis = analyzer.analyze(
+                            article["title"],
+                            f"YouTube留言：{comment.get('content', '')}"
+                        )
+                        comment_item_id = db.get_thread_item_id_by_platform_item_id(
+                            comment.get("platform_item_id")
+                        )
+                        if comment_item_id:
+                            db.save_item_analysis(
+                                comment_item_id,
+                                run_id,
+                                comment_analysis,
+                                analyzed_content=(comment.get("content", "")[:500]),
+                            )
+                    except Exception as e:
+                        logger.warning(
+                            "YouTube 留言分析結果儲存失敗 [%s/%s]：%s",
+                            article.get("link", "?"),
+                            comment.get("platform_item_id"),
+                            e,
+                        )
+
             # 格式化輸出
             sentiment  = analysis.get("sentiment", "未知")
             score      = analysis.get("score", 0)

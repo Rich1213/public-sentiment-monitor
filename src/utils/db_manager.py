@@ -347,6 +347,24 @@ class SentimentDB:
             CREATE INDEX IF NOT EXISTS idx_analyses_run    ON analyses(run_id);
             CREATE INDEX IF NOT EXISTS idx_analyses_thread ON analyses(thread_id);
 
+            CREATE TABLE IF NOT EXISTS item_analyses (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                thread_item_id  INTEGER NOT NULL REFERENCES thread_items(id),
+                run_id          INTEGER REFERENCES monitoring_runs(id),
+                analyzed_content TEXT,
+                sentiment       TEXT,
+                score           REAL,
+                theme           TEXT,
+                reason          TEXT,
+                voice_source    TEXT,
+                analyzed_with   TEXT,
+                model_used      TEXT,
+                source_weight   REAL    NOT NULL DEFAULT 1.0,
+                analyzed_at     TEXT    DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_item_analyses_run ON item_analyses(run_id);
+            CREATE INDEX IF NOT EXISTS idx_item_analyses_item ON item_analyses(thread_item_id);
+
             CREATE TABLE IF NOT EXISTS pr_reports (
                 id         INTEGER PRIMARY KEY AUTOINCREMENT,
                 run_id     INTEGER REFERENCES monitoring_runs(id),
@@ -435,6 +453,23 @@ class SentimentDB:
             )""",
             "CREATE INDEX IF NOT EXISTS idx_analyses_run    ON analyses(run_id)",
             "CREATE INDEX IF NOT EXISTS idx_analyses_thread ON analyses(thread_id)",
+            """CREATE TABLE IF NOT EXISTS item_analyses (
+                id              SERIAL PRIMARY KEY,
+                thread_item_id  INTEGER NOT NULL REFERENCES thread_items(id),
+                run_id          INTEGER REFERENCES monitoring_runs(id),
+                analyzed_content TEXT,
+                sentiment       TEXT,
+                score           REAL,
+                theme           TEXT,
+                reason          TEXT,
+                voice_source    TEXT,
+                analyzed_with   TEXT,
+                model_used      TEXT,
+                source_weight   REAL    NOT NULL DEFAULT 1.0,
+                analyzed_at     TIMESTAMPTZ DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_item_analyses_run ON item_analyses(run_id)",
+            "CREATE INDEX IF NOT EXISTS idx_item_analyses_item ON item_analyses(thread_item_id)",
             """CREATE TABLE IF NOT EXISTS pr_reports (
                 id         SERIAL PRIMARY KEY,
                 run_id     INTEGER REFERENCES monitoring_runs(id),
@@ -656,6 +691,29 @@ class SentimentDB:
         finally:
             conn.close()
 
+    def get_run_item_analyses(self, run_id: int) -> List[Dict]:
+        """回傳指定 run 的留言級分析結果。"""
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"""SELECT ia.sentiment, ia.score, ia.theme, ia.reason,
+                       ia.voice_source, ia.analyzed_with, ia.model_used,
+                       ia.analyzed_at, ia.source_weight,
+                       ti.content, ti.author, ti.platform_item_id,
+                       t.title, t.url, t.channel, t.board
+                FROM item_analyses ia
+                JOIN thread_items ti ON ia.thread_item_id = ti.id
+                JOIN threads t ON ti.thread_id = t.id
+                WHERE ia.run_id = {ph}
+                ORDER BY ia.analyzed_at""",
+                (run_id,)
+            )
+            return [self._normalize_analysis_row(row) for row in self._adapter.fetchall_dict(c)]
+        finally:
+            conn.close()
+
     def get_run_pr_report(self, run_id: int) -> Optional[Dict]:
         """回傳指定 run 的 PR 策略報告（若不存在回傳 None）。"""
         ph = self._ph()
@@ -668,6 +726,19 @@ class SentimentDB:
             )
             row = c.fetchone()
             return self._adapter.fetchone_dict(c, row)
+        finally:
+            conn.close()
+
+    def get_thread_item_id_by_platform_item_id(self, platform_item_id: str) -> Optional[int]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(f"SELECT id FROM thread_items WHERE platform_item_id = {ph}", (platform_item_id,))
+            row = c.fetchone()
+            if row is None:
+                return None
+            return row[0] if self._adapter.is_postgres else row["id"]
         finally:
             conn.close()
 
@@ -866,6 +937,41 @@ class SentimentDB:
                     analysis.get("analyzed_with"),
                     analysis.get("model_used"),
                     source_weight,
+                    datetime.now().isoformat(),
+                )
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+    def save_item_analysis(
+        self,
+        thread_item_id: int,
+        run_id: int,
+        analysis: Dict,
+        analyzed_content: str = "",
+    ):
+        ph = self._ph()
+        normalized_score = normalize_score(analysis.get("score"))
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"""INSERT INTO item_analyses
+                  (thread_item_id, run_id, analyzed_content,
+                   sentiment, score, theme, reason,
+                   voice_source, analyzed_with, model_used, source_weight, analyzed_at)
+                VALUES ({ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph},{ph})""",
+                (
+                    thread_item_id, run_id, analyzed_content,
+                    analysis.get("sentiment"),
+                    normalized_score,
+                    analysis.get("theme"),
+                    analysis.get("reason"),
+                    analysis.get("voice_source"),
+                    analysis.get("analyzed_with"),
+                    analysis.get("model_used"),
+                    1.0,
                     datetime.now().isoformat(),
                 )
             )

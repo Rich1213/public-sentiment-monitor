@@ -30,6 +30,9 @@ YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
 VIEWS_THRESHOLD  = int(os.getenv("YOUTUBE_VIEWS_THRESHOLD", "10000"))
 RECENT_HOURS     = int(os.getenv("YOUTUBE_RECENT_HOURS", "48"))
 COMMENTS_PER_VIDEO = int(os.getenv("YOUTUBE_COMMENTS_PER_VIDEO", "30"))
+ANALYZED_COMMENTS_PER_VIDEO = int(os.getenv("YOUTUBE_ANALYZED_COMMENTS_PER_VIDEO", "15"))
+COMMENT_MIN_LIKES = int(os.getenv("YOUTUBE_COMMENT_MIN_LIKES", "3"))
+COMMENT_MIN_LENGTH = int(os.getenv("YOUTUBE_COMMENT_MIN_LENGTH", "15"))
 
 
 class YouTubeCollector:
@@ -44,6 +47,31 @@ class YouTubeCollector:
 
         if not self.api_key:
             raise ValueError("YOUTUBE_API_KEY 環境變數未設定")
+
+    def _select_comments_for_analysis(self, comments: List[Dict]) -> List[Dict]:
+        def score_comment(comment: Dict) -> int:
+            text = (comment.get("content") or "").strip()
+            likes = int(comment.get("like_count") or 0)
+            score = likes * 3
+            if len(text) >= COMMENT_MIN_LENGTH:
+                score += 4
+            if any(term in text.lower() for term in ["7-11", "7-eleven", "統一超商", "小七", "食安", "活蟲", "異物", "下架", "污染"]):
+                score += 6
+            return score
+
+        shortlisted = []
+        for comment in comments:
+            text = (comment.get("content") or "").strip()
+            likes = int(comment.get("like_count") or 0)
+            if len(text) < COMMENT_MIN_LENGTH and likes < COMMENT_MIN_LIKES:
+                continue
+            shortlisted.append({**comment, "_analysis_score": score_comment(comment)})
+
+        shortlisted.sort(
+            key=lambda item: (item["_analysis_score"], int(item.get("like_count") or 0), len(item.get("content") or "")),
+            reverse=True,
+        )
+        return shortlisted[:ANALYZED_COMMENTS_PER_VIDEO]
 
     # ── 搜尋影片 ─────────────────────────────────────────────────
 
@@ -233,16 +261,17 @@ class YouTubeCollector:
                 continue
 
             comments = self._get_comments(vid)
+            selected_comments = self._select_comments_for_analysis(comments)
             comment_block = "\n".join(
                 f"[{it.get('like_count', 0)}讚] {it.get('content', '')}"
-                for it in comments[:COMMENTS_PER_VIDEO]
-            ) if comments else ""
+                for it in selected_comments
+            ) if selected_comments else ""
 
             content_parts = [title]
             if v["description"]:
                 content_parts.append(v["description"])
             if comment_block:
-                content_parts.append("---留言---")
+                content_parts.append("---留言精選---")
                 content_parts.append(comment_block)
             content = "\n".join(content_parts)
 
@@ -280,6 +309,16 @@ class YouTubeCollector:
                         "published_at": item.get("published_at"),
                     }
                     for idx, item in enumerate(comments, 1)
+                ],
+                "analysis_comment_items": [
+                    {
+                        "platform_item_id": item.get("comment_id"),
+                        "author": item.get("author"),
+                        "content": item.get("content"),
+                        "like_count": item.get("like_count"),
+                        "published_at": item.get("published_at"),
+                    }
+                    for item in selected_comments
                 ],
             }
 
