@@ -109,6 +109,20 @@ test('deriveProgressState hides stale waiting state when no active railway run e
   assert.equal(state.visible, false);
 });
 
+test('deriveProgressState ignores stale orphan active runs on restore', () => {
+  const state = deriveProgressState({
+    runs: [
+      { keyword: '7-ELEVEN', started_at: '2026-05-18T01:00:00.000Z', ended_at: null },
+      { keyword: '全家', started_at: '2026-05-18T01:05:00.000Z', ended_at: null },
+    ],
+    monitorKeywords: ['7-ELEVEN', '全家', '萊爾富', 'OK mart', '超商食安'],
+    triggeredAtISO: null,
+    nowMs: Date.parse('2026-05-18T05:00:00.000Z'),
+  });
+
+  assert.equal(state.visible, false);
+});
+
 test('deriveProgressState shows active railway progress when run exists', () => {
   const state = deriveProgressState({
     runs: [

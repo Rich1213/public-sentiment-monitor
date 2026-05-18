@@ -94,154 +94,165 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
 
     db.ensure_keyword(keyword)
     run_id = db.create_run(keyword, fresh_mode=fresh_mode)
-
-    # ── 1. 多渠道資料採集 ─────────────────────────────────────
-    print("\n  📡 多渠道採集中...")
-    all_articles = []
-    collector_map = [
-        ("Google News", GoogleNewsCollector(keyword, db=db)),
-        ("PTT",         PTTCollector(keyword, db=db)),
-        ("Dcard",       DcardCollector(keyword, db=db)),
-    ]
-
-    # YouTube：有設 API key 才加入（避免未設定時報錯）
-    if os.getenv("YOUTUBE_API_KEY"):
-        try:
-            collector_map.append(("YouTube", YouTubeCollector(keyword, db=db)))
-        except Exception as e:
-            print(f"  ⚠️  YouTube collector 初始化失敗：{e}")
-
-    for name, collector in collector_map:
-        try:
-            articles = collector.fetch_latest_posts(
-                limit=FETCH_LIMIT, fresh_mode=fresh_mode
-            )
-            all_articles.extend(articles)
-        except Exception as e:
-            print(f"  ⚠️  [{name}] 採集失敗：{e}")
-            logger.warning("[%s] 採集失敗：%s", name, e, exc_info=True)
-
-    if not all_articles:
-        print(f"\n  ℹ️  {keyword}：本次無新資料，結束。")
-        db.close_run(run_id, articles_found=0, articles_new=0)
-        return
-
-    print(f"\n  📥 共採集 {len(all_articles)} 篇，開始 AI 情感分析...\n")
-
-    # ── 2. 逐篇情感分析 ──────────────────────────────────────
-    _print_sep()
-    print("  📰 各篇輿情分析")
-    _print_sep()
-
-    analyses    = []
-    alert_pairs = []   # [(article, analysis), ...]
-
-    for i, article in enumerate(all_articles, 1):
-        if i > 1:
-            time.sleep(INTER_ARTICLE_DELAY)   # 控制 NVIDIA API 速率（40 req/min）
-        try:
-            analysis = analyzer.analyze(article["title"], article.get("content", ""))
-        except Exception as e:
-            logger.warning("情感分析失敗 [%s]：%s", article.get("link", "?"), e)
-            analysis = {
-                "sentiment": "未知", "score": 0,
-                "theme": "分析失敗", "reason": str(e),
-                "voice_source": "未知", "analyzed_with": "標題",
-            }
-        analysis["score"] = normalize_score(analysis.get("score"))
-        analyses.append(analysis)
-
-        # 寫入 DB
-        thread_id = hashlib.md5(article["link"].encode()).hexdigest()
-        try:
-            db.save_analysis(
-                thread_id, run_id, analysis,
-                analyzed_content=article.get("content", "")[:500],
-            )
-        except Exception as e:
-            logger.warning("分析結果儲存失敗 [%s]：%s", article.get("link", "?"), e)
-
-        # 格式化輸出
-        sentiment  = analysis.get("sentiment", "未知")
-        score      = analysis.get("score", 0)
-        theme      = analysis.get("theme", "-")
-        reason     = analysis.get("reason", "-")
-        voice      = analysis.get("voice_source", "-")
-        analyzed_w = analysis.get("analyzed_with", "-")
-        emoji      = SENTIMENT_EMOJI.get(sentiment, "❓")
-
-        print(f"\n[{i:02d}] {article['title']}")
-        print(f"      📰 {article['source']}　🕐 {article['published']}　依據：{analyzed_w}")
-        print(f"      {emoji} 情緒：{sentiment}（強度 {score}）　🏷 主題：{theme}")
-        print(f"      🗣 聲量：{voice}")
-        print(f"      💡 {reason}")
-        print(f"      🔗 {article['link']}")
-
-        # 達到警報閾值
-        if sentiment == "負面" and score >= ALERT_THRESHOLD:
-            alert_pairs.append((article, analysis))
-
-    # ── 3. 輿情彙整統計 ──────────────────────────────────────
-    print()
-    _print_sep()
-    print("  📊 輿情彙整")
-    _print_sep()
-
-    counts    = Counter(a.get("sentiment", "未知") for a in analyses)
-    total     = len(analyses)
-    avg_score = sum(a.get("score", 0) for a in analyses) / max(total, 1)
-    themes    = list(dict.fromkeys(
-        a.get("theme", "").upper() for a in analyses if a.get("theme")
-    ))
-
-    for label in ["負面", "中立", "正面"]:
-        cnt = counts.get(label, 0)
-        bar = "█" * cnt + "░" * (total - cnt)
-        print(f"  {SENTIMENT_EMOJI.get(label)} {label}：{cnt} 篇  [{bar}]")
-
-    print(f"\n  平均情緒強度：{avg_score:.2f}")
-    print(f"  主導情緒：{SENTIMENT_EMOJI.get(counts.most_common(1)[0][0], '❓')} "
-          f"{counts.most_common(1)[0][0]}")
-    print(f"  主要議題：{'、'.join(themes[:5]) if themes else '—'}")
-
-    # ── 4. Telegram 警報 ──────────────────────────────────────
-    if alert_pairs:
-        if notifier:
-            print(f"\n  🚨 發現 {len(alert_pairs)} 篇高強度負面文章，發送 Telegram 警報...")
-            for article, analysis in alert_pairs:
-                try:
-                    notifier.send_sentiment_alert(keyword, article, analysis)
-                except Exception as e:
-                    print(f"     ⚠️  通知失敗：{e}")
-        else:
-            print(f"\n  🚨 {keyword}：發現 {len(alert_pairs)} 篇高強度負面（Telegram 未設定，警報未發送）")
-            for article, analysis in alert_pairs:
-                score = analysis.get("score", 0)
-                print(f"     ⚠️  [{score:.1f}] {article['title'][:50]}")
-                print(f"          🔗 {article['link']}")
-    else:
-        print(f"\n  ✅ {keyword}：無緊急警報")
-
-    # ── 5. PR 策略分析 ────────────────────────────────────────
-    print()
-    _print_sep()
-    print("  🧠 公關戰略分析（AI 研判中）")
-    _print_sep()
+    total = 0
+    run_closed = False
 
     try:
-        dashboard_narrator = DashboardNarrator()
-        dashboard_summary = dashboard_narrator.summarize(keyword, all_articles, analyses)
-        pr_report = advisor.advise(keyword, all_articles, analyses)
-        negative_count = counts.get("負面", 0)
-        track = "A" if negative_count > total / 2 else "B"
-        db.save_pr_report(run_id, keyword, track, pr_report, dashboard_summary=dashboard_summary)
-        print(f"  → Dashboard 摘要：{dashboard_summary}\n")
-        print(pr_report)
-    except Exception as e:
-        print(f"  ⚠️  PR 分析失敗：{e}")
-        logger.error("PR 分析失敗 [%s]：%s", keyword, e, exc_info=True)
+        # ── 1. 多渠道資料採集 ─────────────────────────────────────
+        print("\n  📡 多渠道資料採集中...")
+        all_articles = []
+        collector_map = [
+            ("Google News", GoogleNewsCollector(keyword, db=db)),
+            ("PTT",         PTTCollector(keyword, db=db)),
+            ("Dcard",       DcardCollector(keyword, db=db)),
+        ]
 
-    db.close_run(run_id, articles_found=total, articles_new=total)
+        # YouTube：有設 API key 才加入（避免未設定時報錯）
+        if os.getenv("YOUTUBE_API_KEY"):
+            try:
+                collector_map.append(("YouTube", YouTubeCollector(keyword, db=db)))
+            except Exception as e:
+                print(f"  ⚠️  YouTube collector 初始化失敗：{e}")
+
+        for name, collector in collector_map:
+            try:
+                articles = collector.fetch_latest_posts(
+                    limit=FETCH_LIMIT, fresh_mode=fresh_mode
+                )
+                all_articles.extend(articles)
+            except Exception as e:
+                print(f"  ⚠️  [{name}] 採集失敗：{e}")
+                logger.warning("[%s] 採集失敗：%s", name, e, exc_info=True)
+
+        if not all_articles:
+            print(f"\n  ℹ️  {keyword}：本次無新資料，結束。")
+            db.close_run(run_id, articles_found=0, articles_new=0)
+            run_closed = True
+            return
+
+        print(f"\n  📥 共採集 {len(all_articles)} 篇，開始 AI 情感分析...\n")
+
+        # ── 2. 逐篇情感分析 ──────────────────────────────────────
+        _print_sep()
+        print("  📰 各篇輿情分析")
+        _print_sep()
+
+        analyses    = []
+        alert_pairs = []   # [(article, analysis), ...]
+
+        for i, article in enumerate(all_articles, 1):
+            if i > 1:
+                time.sleep(INTER_ARTICLE_DELAY)   # 控制 NVIDIA API 速率（40 req/min）
+            try:
+                analysis = analyzer.analyze(article["title"], article.get("content", ""))
+            except Exception as e:
+                logger.warning("情感分析失敗 [%s]：%s", article.get("link", "?"), e)
+                analysis = {
+                    "sentiment": "未知", "score": 0,
+                    "theme": "分析失敗", "reason": str(e),
+                    "voice_source": "未知", "analyzed_with": "標題",
+                }
+            analysis["score"] = normalize_score(analysis.get("score"))
+            analyses.append(analysis)
+
+            # 寫入 DB
+            thread_id = hashlib.md5(article["link"].encode()).hexdigest()
+            try:
+                db.save_analysis(
+                    thread_id, run_id, analysis,
+                    analyzed_content=article.get("content", "")[:500],
+                )
+            except Exception as e:
+                logger.warning("分析結果儲存失敗 [%s]：%s", article.get("link", "?"), e)
+
+            # 格式化輸出
+            sentiment  = analysis.get("sentiment", "未知")
+            score      = analysis.get("score", 0)
+            theme      = analysis.get("theme", "-")
+            reason     = analysis.get("reason", "-")
+            voice      = analysis.get("voice_source", "-")
+            analyzed_w = analysis.get("analyzed_with", "-")
+            emoji      = SENTIMENT_EMOJI.get(sentiment, "❓")
+
+            print(f"\n[{i:02d}] {article['title']}")
+            print(f"      📰 {article['source']}　🕐 {article['published']}　依據：{analyzed_w}")
+            print(f"      {emoji} 情緒：{sentiment}（強度 {score}）　🏷 主題：{theme}")
+            print(f"      🗣 聲量：{voice}")
+            print(f"      💡 {reason}")
+            print(f"      🔗 {article['link']}")
+
+            # 達到警報閾值
+            if sentiment == "負面" and score >= ALERT_THRESHOLD:
+                alert_pairs.append((article, analysis))
+
+        # ── 3. 輿情彙整統計 ──────────────────────────────────────
+        print()
+        _print_sep()
+        print("  📊 輿情彙整")
+        _print_sep()
+
+        counts    = Counter(a.get("sentiment", "未知") for a in analyses)
+        total     = len(analyses)
+        avg_score = sum(a.get("score", 0) for a in analyses) / max(total, 1)
+        themes    = list(dict.fromkeys(
+            a.get("theme", "").upper() for a in analyses if a.get("theme")
+        ))
+
+        for label in ["負面", "中立", "正面"]:
+            cnt = counts.get(label, 0)
+            bar = "█" * cnt + "░" * (total - cnt)
+            print(f"  {SENTIMENT_EMOJI.get(label)} {label}：{cnt} 篇  [{bar}]")
+
+        print(f"\n  平均情緒強度：{avg_score:.2f}")
+        print(f"  主導情緒：{SENTIMENT_EMOJI.get(counts.most_common(1)[0][0], '❓')} "
+              f"{counts.most_common(1)[0][0]}")
+        print(f"  主要議題：{'、'.join(themes[:5]) if themes else '—'}")
+
+        # ── 4. Telegram 警報 ──────────────────────────────────────
+        if alert_pairs:
+            if notifier:
+                print(f"\n  🚨 發現 {len(alert_pairs)} 篇高強度負面文章，發送 Telegram 警報...")
+                for article, analysis in alert_pairs:
+                    try:
+                        notifier.send_sentiment_alert(keyword, article, analysis)
+                    except Exception as e:
+                        print(f"     ⚠️  通知失敗：{e}")
+            else:
+                print(f"\n  🚨 {keyword}：發現 {len(alert_pairs)} 篇高強度負面（Telegram 未設定，警報未發送）")
+                for article, analysis in alert_pairs:
+                    score = analysis.get("score", 0)
+                    print(f"     ⚠️  [{score:.1f}] {article['title'][:50]}")
+                    print(f"          🔗 {article['link']}")
+        else:
+            print(f"\n  ✅ {keyword}：無緊急警報")
+
+        # ── 5. PR 策略分析 ────────────────────────────────────────
+        print()
+        _print_sep()
+        print("  🧠 公關戰略分析（AI 研判中）")
+        _print_sep()
+
+        try:
+            dashboard_narrator = DashboardNarrator()
+            dashboard_summary = dashboard_narrator.summarize(keyword, all_articles, analyses)
+            pr_report = advisor.advise(keyword, all_articles, analyses)
+            negative_count = counts.get("負面", 0)
+            track = "A" if negative_count > total / 2 else "B"
+            db.save_pr_report(run_id, keyword, track, pr_report, dashboard_summary=dashboard_summary)
+            print(f"  → Dashboard 摘要：{dashboard_summary}\n")
+            print(pr_report)
+        except Exception as e:
+            print(f"  ⚠️  PR 分析失敗：{e}")
+            logger.error("PR 分析失敗 [%s]：%s", keyword, e, exc_info=True)
+
+        db.close_run(run_id, articles_found=total, articles_new=total)
+        run_closed = True
+    finally:
+        if not run_closed:
+            try:
+                db.close_run(run_id, articles_found=total, articles_new=total)
+            except Exception as e:
+                logger.error("關閉 run 失敗 [%s/%s]：%s", keyword, run_id, e, exc_info=True)
 
 
 # ─────────────────────────────────────────────────────────────
@@ -272,6 +283,7 @@ def run_all_brands(
     from src.notifiers.telegram_notifier import TelegramNotifier
 
     db       = SentimentDB()
+    cleaned  = db.close_open_runs(keywords=keywords, older_than_minutes=30)
     analyzer = SentimentAnalyzer()
     advisor  = PRAdvisor()
 
@@ -282,6 +294,8 @@ def run_all_brands(
         notifier = None
 
     if print_banner:
+        if cleaned:
+            print(f"  已自動關閉 {cleaned} 筆逾時未結束的舊 run")
         _print_banner()
         print(f"\n  監控品牌：{', '.join(keywords)}")
         print(f"  資料來源：Google News, PTT, Dcard")

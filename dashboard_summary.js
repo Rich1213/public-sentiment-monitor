@@ -5,6 +5,8 @@
     root.DashboardSummary = factory();
   }
 })(typeof self !== 'undefined' ? self : this, function () {
+  const ACTIVE_RUN_MAX_AGE_MS = 30 * 60 * 1000;
+
   const CHANNEL_LABELS = {
     google_news: 'Google News',
     ptt: 'PTT',
@@ -277,13 +279,21 @@
   }
 
   function deriveProgressState({ runs, monitorKeywords, triggeredAtISO, nowMs = Date.now() }) {
-    const inferredStart = triggeredAtISO || inferBatchStart(runs || [], monitorKeywords || []);
-    const triggeredMs = inferredStart ? new Date(inferredStart).getTime() : 0;
+    const inferredStart = inferBatchStart(runs || [], monitorKeywords || []);
+    const triggeredMs = triggeredAtISO ? new Date(triggeredAtISO).getTime() : 0;
+    const inferredStartMs = inferredStart ? new Date(inferredStart).getTime() : 0;
+    const effectiveStartMs = triggeredMs || inferredStartMs;
+    if (!triggeredMs && inferredStartMs && (nowMs - inferredStartMs) > ACTIVE_RUN_MAX_AGE_MS) {
+      return { visible: false };
+    }
     const freshRuns = (runs || []).filter(r =>
       monitorKeywords.includes(r.keyword) &&
-      (!triggeredMs || new Date(r.started_at).getTime() >= triggeredMs)
+      (!effectiveStartMs || new Date(r.started_at).getTime() >= effectiveStartMs)
     );
-    const activeRun = freshRuns.find(r => !r.ended_at);
+    const activeRun = freshRuns
+      .filter(r => !r.ended_at)
+      .filter(r => triggeredMs || (nowMs - new Date(r.started_at).getTime()) <= ACTIVE_RUN_MAX_AGE_MS)
+      .sort((a, b) => new Date(b.started_at) - new Date(a.started_at))[0];
     const doneRuns = freshRuns.filter(r => r.ended_at);
     const totalExpected = (monitorKeywords || []).length || 1;
 

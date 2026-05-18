@@ -66,6 +66,34 @@ class ScoreCompatTest(unittest.TestCase):
             if os.path.exists(path):
                 os.remove(path)
 
+    def test_close_open_runs_closes_only_stale_rows(self):
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            db = SentimentDB(db_path=path)
+            run_old = db.create_run("7-ELEVEN")
+            run_new = db.create_run("全家")
+
+            conn = db.adapter.get_connection()
+            try:
+                c = conn.cursor()
+                c.execute("UPDATE monitoring_runs SET started_at = '2026-05-18T00:00:00' WHERE id = ?", (run_old,))
+                c.execute("UPDATE monitoring_runs SET started_at = '2026-05-18T23:59:00' WHERE id = ?", (run_new,))
+                conn.commit()
+            finally:
+                conn.close()
+
+            closed = db.close_open_runs(keywords=["7-ELEVEN", "全家"], older_than_minutes=30)
+            self.assertEqual(closed, 1)
+
+            rows = db.get_recent_runs(limit=10)
+            row_map = {row["id"]: row for row in rows}
+            self.assertIsNotNone(row_map[run_old]["ended_at"])
+            self.assertIsNone(row_map[run_new]["ended_at"])
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
+
 
 if __name__ == "__main__":
     unittest.main()

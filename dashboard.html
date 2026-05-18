@@ -554,12 +554,17 @@ async function restoreMonitorProgress() {
     const res = await fetch(`${API}/runs/recent?limit=50`);
     const data = await res.json();
     const runs = data.runs || [];
-    const activeRun = runs.find(r => !r.ended_at && MONITOR_KEYWORDS.includes(r.keyword));
+    const state = deriveProgressState({
+      runs,
+      monitorKeywords: MONITOR_KEYWORDS,
+      triggeredAtISO: monitorTriggeredAt ? monitorTriggeredAt.toISOString() : null,
+      nowMs: Date.now(),
+    });
 
-    if (activeRun) {
+    if (state.visible) {
       if (!monitorTriggeredAt) {
-        const inferredStart = inferBatchStart(runs, MONITOR_KEYWORDS) || activeRun.started_at;
-        setMonitorTriggeredAt(inferredStart);
+        const inferredStart = inferBatchStart(runs, MONITOR_KEYWORDS);
+        if (inferredStart) setMonitorTriggeredAt(inferredStart);
       }
       showProgressPanel();
       startProgressPoller();

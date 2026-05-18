@@ -24,7 +24,7 @@ Analysis  LLM 結果
 import os
 import hashlib
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
 
 from src.utils.score_utils import normalize_score, is_legacy_score
@@ -535,6 +535,43 @@ class SentimentDB:
                 (datetime.now().isoformat(), articles_found, articles_new, run_id)
             )
             conn.commit()
+        finally:
+            conn.close()
+
+    def close_open_runs(self, keywords: Optional[List[str]] = None, older_than_minutes: Optional[int] = None) -> int:
+        """關閉 orphan / stale open runs，回傳關閉筆數。"""
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute("SELECT id, keyword, started_at FROM monitoring_runs WHERE ended_at IS NULL")
+            rows = self._adapter.fetchall_dict(c)
+            if not rows:
+                return 0
+
+            now = datetime.now()
+            to_close = []
+            keyword_set = set(keywords or [])
+            for row in rows:
+                if keyword_set and row.get("keyword") not in keyword_set:
+                    continue
+                if older_than_minutes is not None:
+                    started_at = row.get("started_at")
+                    try:
+                        started_dt = datetime.fromisoformat(started_at)
+                    except Exception:
+                        started_dt = now - timedelta(days=1)
+                    if (now - started_dt) < timedelta(minutes=older_than_minutes):
+                        continue
+                to_close.append(int(row["id"]))
+
+            for run_id in to_close:
+                c.execute(
+                    f"UPDATE monitoring_runs SET ended_at={ph}, articles_found=COALESCE(articles_found, 0), articles_new=COALESCE(articles_new, 0) WHERE id={ph}",
+                    (now.isoformat(), run_id)
+                )
+            conn.commit()
+            return len(to_close)
         finally:
             conn.close()
 
