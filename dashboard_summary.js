@@ -117,7 +117,7 @@
 
   function buildNarrativeCandidates(items, source) {
     return (items || [])
-      .filter(item => item && item.sentiment === '負面')
+      .filter(item => item && (item.sentiment === '負面' || item.sentiment === undefined || item.sentiment === null))
       .map(item => {
         const mergedText = `${item.theme || ''} ${item.title || ''}`;
         return {

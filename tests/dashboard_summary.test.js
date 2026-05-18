@@ -38,10 +38,10 @@ test('buildPrimarySummary returns crisis-oriented 0-100 risk score and narrative
   assert.equal(summary.label, '危機處理中');
   assert.equal(summary.colorToken, 'danger');
   assert.ok(summary.riskScore >= 75);
-  assert.match(summary.narrative, /今日最需要關注的事件是生鮮沙拉驚見活蟲、義大利麵出現活蟲/);
+  assert.match(summary.narrative, /今日最需要關注的事件是超商食品出現活蟲疑慮/);
   assert.match(summary.narrative, /主要出現在 YouTube、PTT/);
   assert.match(summary.narrative, /已反映出食安與品管風險擴散/);
-  assert.match(summary.narrative, /需要立即釐清是否直接涉及 7-ELEVEN/);
+  assert.match(summary.narrative, /建議立即釐清是否直接涉及 7-ELEVEN/);
 });
 
 test('buildPrimarySummary prioritizes severe market food-safety crisis over weaker brand complaints', () => {
