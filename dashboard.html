@@ -197,7 +197,7 @@
 <script>
 const API = 'https://web-production-7a3df.up.railway.app';
 const BRANDS = ['7-ELEVEN', '全家', '萊爾富', 'OK mart'];
-const CH_COLORS = { google_news: '#818cf8', ptt: '#34d399', dcard: '#fb923c' };
+const CH_COLORS = { google_news: '#818cf8', ptt: '#34d399', dcard: '#fb923c', youtube: '#f87171' };
 const BRAND_COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6'];
 
 let allAlerts = [];
@@ -254,7 +254,7 @@ function updateStatus(health) {
 function processRuns(runs) {
   // Group by keyword (brand)
   const brandMap = {};
-  const channelCounts = { google_news: 0, ptt: 0, dcard: 0 };
+  const channelCounts = { google_news: 0, ptt: 0, dcard: 0, youtube: 0 };
   let totalAlerts = 0, totalArticles = 0;
   allAlerts = [];
   const seenArticles = new Set(); // 標題去重，避免多 keyword run 重複計算同一篇
@@ -407,7 +407,7 @@ function renderTrend(runs) {
 
 function renderChannelBars(counts) {
   const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
-  const labels = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard' };
+  const labels = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', youtube: 'YouTube' };
   document.getElementById('channel-bars').innerHTML = Object.entries(counts).map(([ch, cnt]) => `
     <div class="ch-row">
       <span class="ch-label">${labels[ch]}</span>
@@ -438,7 +438,7 @@ function renderAlertTable(alerts) {
     </tr></thead>
     <tbody>${alerts.slice(0, 20).map(a => {
       const scoreClass = a.score >= 0.9 ? 'score-high' : 'score-mid';
-      const ch = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard' }[a.channel] || a.channel;
+      const ch = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', youtube: 'YouTube' }[a.channel] || a.channel;
       const date = a.published ? a.published.slice(0, 10) : '—';
       return `<tr>
         <td style="color:#e2e8f0; font-weight:500">${a.brand}</td>

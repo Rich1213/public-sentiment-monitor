@@ -85,6 +85,7 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
     from src.collectors.google_news_collector import GoogleNewsCollector
     from src.collectors.ptt_collector import PTTCollector
     from src.collectors.dcard_collector import DcardCollector
+    from src.collectors.youtube_collector import YouTubeCollector
 
     _print_sep("═")
     print(f"  🏪 {keyword}  [{datetime.now().strftime('%Y-%m-%d %H:%M')}]")
@@ -101,6 +102,13 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
         ("PTT",         PTTCollector(keyword, db=db)),
         ("Dcard",       DcardCollector(keyword, db=db)),
     ]
+
+    # YouTube：有設 API key 才加入（避免未設定時報錯）
+    if os.getenv("YOUTUBE_API_KEY"):
+        try:
+            collector_map.append(("YouTube", YouTubeCollector(keyword, db=db)))
+        except Exception as e:
+            print(f"  ⚠️  YouTube collector 初始化失敗：{e}")
 
     for name, collector in collector_map:
         try:
