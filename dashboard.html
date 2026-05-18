@@ -264,6 +264,7 @@ async function loadData() {
           ...d.run,
           analyses: d.analyses || [],
           pr_report: d.pr_report ? d.pr_report.report : null,
+          dashboard_summary: d.pr_report ? d.pr_report.dashboard_summary : null,
           track: d.pr_report ? d.pr_report.track : null
         }));
       processRuns(fullRuns);
@@ -295,7 +296,7 @@ function processRuns(runs) {
 
   runs.forEach(run => {
     const kw = run.keyword || '未知';
-    if (!brandMap[kw]) brandMap[kw] = { pos: 0, neu: 0, neg: 0, total: 0, scores: [], analyses: [], alerts: [], pr: null, keyword: kw };
+    if (!brandMap[kw]) brandMap[kw] = { pos: 0, neu: 0, neg: 0, total: 0, scores: [], analyses: [], alerts: [], pr: null, dashboardSummary: null, keyword: kw };
     const bm = brandMap[kw];
 
     if (run.analyses) {
@@ -338,6 +339,7 @@ function processRuns(runs) {
       });
     }
     if (run.pr_report) bm.pr = run.pr_report;
+    if (run.dashboard_summary) bm.dashboardSummary = run.dashboard_summary;
   });
 
   allAlerts.sort((a, b) => b.score - a.score);
@@ -358,7 +360,7 @@ function renderKPIs(brandMap, totalAlerts, totalArticles) {
   document.getElementById('kpi-alerts').className = `kpi-val risk-${summary.colorToken}`;
   document.getElementById('kpi-alert-note').textContent = summary.note;
   document.getElementById('kpi-alert-note').className = `kpi-note risk-${summary.colorToken}`;
-  document.getElementById('kpi-narrative').textContent = summary.narrative;
+  document.getElementById('kpi-narrative').textContent = primary?.dashboardSummary || summary.narrative;
   document.getElementById('kpi-articles').textContent = totalArticles;
 
   if (primary && primary.scores.length > 0) {
@@ -516,7 +518,7 @@ function renderPRStrategy(brandMap) {
       ${summary.note}
     </div>`;
 
-  document.getElementById('pr-content').textContent = summary.narrative + (primary.pr ? `\n\n補充策略建議：\n${primary.pr.slice(0, 500)}` : '');
+  document.getElementById('pr-content').textContent = (primary.dashboardSummary || summary.narrative) + (primary.pr ? `\n\n補充策略建議：\n${primary.pr.slice(0, 500)}` : '');
 }
 
 function showEmptyState(msg) {

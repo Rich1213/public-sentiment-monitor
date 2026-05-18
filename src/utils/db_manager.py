@@ -190,6 +190,7 @@ class SentimentDB:
             self._adapter._sqlite_path = db_path
 
         self._init_db()
+        self._ensure_schema_migrations()
         self._seed_sources()
 
     @property
@@ -220,6 +221,23 @@ class SentimentDB:
                 if stmt.strip():
                     c.execute(stmt)
             conn.commit()
+        finally:
+            conn.close()
+
+    def _ensure_schema_migrations(self):
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            if self._adapter.is_postgres:
+                c.execute("ALTER TABLE pr_reports ADD COLUMN IF NOT EXISTS dashboard_summary TEXT")
+            else:
+                c.execute("PRAGMA table_info(pr_reports)")
+                cols = [row["name"] for row in c.fetchall()]
+                if "dashboard_summary" not in cols:
+                    c.execute("ALTER TABLE pr_reports ADD COLUMN dashboard_summary TEXT")
+            conn.commit()
+        except Exception:
+            conn.rollback()
         finally:
             conn.close()
 
@@ -310,6 +328,7 @@ class SentimentDB:
                 run_id     INTEGER REFERENCES monitoring_runs(id),
                 keyword    TEXT,
                 track      TEXT,
+                dashboard_summary TEXT,
                 report     TEXT,
                 created_at TEXT   DEFAULT (datetime('now'))
             );
@@ -393,6 +412,7 @@ class SentimentDB:
                 run_id     INTEGER REFERENCES monitoring_runs(id),
                 keyword    TEXT,
                 track      TEXT,
+                dashboard_summary TEXT,
                 report     TEXT,
                 created_at TIMESTAMPTZ DEFAULT NOW()
             )""",
@@ -762,14 +782,21 @@ class SentimentDB:
             conn.close()
 
     # ── 存入 PR 報告 ─────────────────────────────────────────
-    def save_pr_report(self, run_id: int, keyword: str, track: str, report: str):
+    def save_pr_report(
+        self,
+        run_id: int,
+        keyword: str,
+        track: str,
+        report: str,
+        dashboard_summary: str = None,
+    ):
         ph = self._ph()
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
             c.execute(
-                f"INSERT INTO pr_reports (run_id, keyword, track, report) VALUES ({ph},{ph},{ph},{ph})",
-                (run_id, keyword, track, report)
+                f"INSERT INTO pr_reports (run_id, keyword, track, dashboard_summary, report) VALUES ({ph},{ph},{ph},{ph},{ph})",
+                (run_id, keyword, track, dashboard_summary, report)
             )
             conn.commit()
         finally:

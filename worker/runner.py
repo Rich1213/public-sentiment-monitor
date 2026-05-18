@@ -86,6 +86,7 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
     from src.collectors.ptt_collector import PTTCollector
     from src.collectors.dcard_collector import DcardCollector
     from src.collectors.youtube_collector import YouTubeCollector
+    from src.analyzers.dashboard_narrator import DashboardNarrator
 
     _print_sep("═")
     print(f"  🏪 {keyword}  [{datetime.now().strftime('%Y-%m-%d %H:%M')}]")
@@ -228,10 +229,13 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
     _print_sep()
 
     try:
+        dashboard_narrator = DashboardNarrator()
+        dashboard_summary = dashboard_narrator.summarize(keyword, all_articles, analyses)
         pr_report = advisor.advise(keyword, all_articles, analyses)
         negative_count = counts.get("負面", 0)
         track = "A" if negative_count > total / 2 else "B"
-        db.save_pr_report(run_id, keyword, track, pr_report)
+        db.save_pr_report(run_id, keyword, track, pr_report, dashboard_summary=dashboard_summary)
+        print(f"  → Dashboard 摘要：{dashboard_summary}\n")
         print(pr_report)
     except Exception as e:
         print(f"  ⚠️  PR 分析失敗：{e}")
