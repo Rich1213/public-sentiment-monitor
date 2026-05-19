@@ -28,6 +28,7 @@ import urllib3
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional
 from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from src.utils.content_extractor import ContentExtractor
 from src.utils.db_manager import SentimentDB
@@ -61,6 +62,7 @@ MAX_RETRIES    = 3
 #   Hate        — 「全家」常被誤用為罵人語，大量假陽性
 TARGET_BOARDS = ["CVS", "Gossiping", "Consumer", "SocialHealth", "WomenTalk"]
 MAX_POST_AGE_DAYS = 90
+APP_TIMEZONE = "Asia/Taipei"
 
 HEADERS = {
     "User-Agent": (
@@ -78,6 +80,9 @@ HEADERS = {
 class PTTCollector:
     CHANNEL     = "ptt"
     SOURCE_NAME = "PTT"
+
+    def _now_local(self) -> datetime:
+        return datetime.now(ZoneInfo(APP_TIMEZONE))
 
     def __init__(self, keyword: str, db: Optional[SentimentDB] = None):
         self.keyword      = keyword
@@ -201,18 +206,18 @@ class PTTCollector:
         例：現在 2026/05，解析到 12/08 → 2025-12-08（而非 2026-12-08）
         """
         try:
-            now = datetime.now()
+            now = self._now_local()
             month, day = date_str.strip().split("/")
             m, d = int(month), int(day)
             year = now.year if m <= now.month else now.year - 1
             return f"{year}-{m:02d}-{d:02d} 00:00"
         except Exception:
-            return datetime.now().strftime("%Y-%m-%d %H:%M")
+            return self._now_local().strftime("%Y-%m-%d %H:%M")
 
     def _is_recent(self, published: str, max_days: int = MAX_POST_AGE_DAYS) -> bool:
         try:
             pub_dt = datetime.strptime(published[:10], "%Y-%m-%d")
-            return (datetime.now() - pub_dt).days <= max_days
+            return (self._now_local().replace(tzinfo=None) - pub_dt).days <= max_days
         except Exception:
             return True
 

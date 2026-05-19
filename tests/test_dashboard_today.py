@@ -323,6 +323,21 @@ class DashboardTodayTest(unittest.TestCase):
         self.assertEqual(summary["all_alerts"][0]["recent_activity_at"], "2026-05-19T10:32:00")
         self.assertEqual(summary["all_alerts"][0]["ongoing_days"], 60)
 
+    def test_dashboard_day_summary_accepts_same_day_space_separated_timestamps(self):
+        run_id = self.db.create_run("全家")
+        thread_id = self._seed_analysis(run_id, "全家", "https://example.com/familymart-ptt", "同日 PTT 文章", score=3)
+        self.db.close_run(run_id, articles_found=1, articles_new=1)
+        self._execute(
+            "UPDATE threads SET channel = ?, published_at = ?, first_seen_at = ? WHERE id = ?",
+            ("ptt", "2026-05-19 00:00", "2026-05-19T08:30:00+08:00", thread_id),
+        )
+
+        summary = self.db.get_dashboard_day_summary(snapshot_date="2026-05-19")
+
+        self.assertEqual(summary["total_articles"], 1)
+        self.assertEqual(summary["channel_counts"]["ptt"], 1)
+        self.assertIn("全家", summary["brand_map"])
+
     def test_dashboard_day_summary_excludes_old_youtube_video_without_today_comment_activity(self):
         run_id = self.db.create_run("7-ELEVEN")
         thread_id = self._seed_analysis(

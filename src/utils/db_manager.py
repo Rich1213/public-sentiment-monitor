@@ -27,10 +27,12 @@ import hashlib
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any, Tuple
+from zoneinfo import ZoneInfo
 
 from src.utils.score_utils import normalize_score, is_legacy_score
 
 logger = logging.getLogger(__name__)
+APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Asia/Taipei")
 
 # ─────────────────────────────────────────────────────────────
 # 預設渠道種子資料
@@ -704,7 +706,10 @@ class SentimentDB:
             conn.close()
 
     def _today_str(self) -> str:
-        return datetime.now().strftime("%Y-%m-%d")
+        return self._local_now().strftime("%Y-%m-%d")
+
+    def _local_now(self) -> datetime:
+        return datetime.now(ZoneInfo(APP_TIMEZONE))
 
     def _day_start_str(self, day: str) -> str:
         return f"{day}T00:00:00"
@@ -1036,12 +1041,10 @@ class SentimentDB:
 
     def _active_threads_for_date(self, snapshot_date: str, keywords: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
         ph = self._ph()
-        day_start = self._day_start_str(snapshot_date)
-        day_end = (datetime.fromisoformat(snapshot_date) + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
-            params: List[Any] = [day_end, day_start, day_end, day_start, day_end, day_start, day_end]
+            params: List[Any] = [snapshot_date, snapshot_date, snapshot_date, snapshot_date]
             keyword_sql = ""
             if keywords:
                 placeholders = ",".join([ph] * len(keywords))
@@ -1058,19 +1061,17 @@ class SentimentDB:
                     t.board,
                     t.published_at,
                     t.first_seen_at,
-                    MAX(CASE WHEN ti.published_at < {ph} THEN ti.published_at END) AS latest_item_published_at
+                    MAX(CASE WHEN substr(COALESCE(ti.published_at, ''), 1, 10) <= {ph} THEN ti.published_at END) AS latest_item_published_at
                 FROM threads t
                 LEFT JOIN thread_items ti ON ti.thread_id = t.id
                 WHERE (
                     (
                         (
-                            t.published_at >= {ph}
-                            AND t.published_at < {ph}
+                            substr(COALESCE(t.published_at, ''), 1, 10) = {ph}
                         )
                         OR (
                             t.published_at IS NULL
-                            AND COALESCE(t.first_seen_at, t.fetched_at) >= {ph}
-                            AND COALESCE(t.first_seen_at, t.fetched_at) < {ph}
+                            AND substr(COALESCE(t.first_seen_at, t.fetched_at, ''), 1, 10) = {ph}
                         )
                     )
                     OR EXISTS (
@@ -1078,8 +1079,7 @@ class SentimentDB:
                         FROM thread_items ti2
                         WHERE ti2.thread_id = t.id
                           AND ti2.item_type <> 'main'
-                          AND ti2.published_at >= {ph}
-                          AND ti2.published_at < {ph}
+                          AND substr(COALESCE(ti2.published_at, ''), 1, 10) = {ph}
                     )
                 )
                 {keyword_sql}
@@ -1563,7 +1563,7 @@ class SentimentDB:
         thread_id = hashlib.md5(url.encode()).hexdigest()
         source_id = self.get_source_id(source_name)
         ph = self._ph()
-        now = datetime.now().isoformat()
+        now = self._local_now().isoformat(timespec="seconds")
         first_seen_at = now
 
         cols = ["id","source_id","channel","title","url","author","board","platform_id","keyword",
