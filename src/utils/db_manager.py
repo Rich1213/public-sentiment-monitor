@@ -1015,6 +1015,32 @@ class SentimentDB:
         finally:
             conn.close()
 
+    def _completed_run_ids_for_date(
+        self,
+        snapshot_date: str,
+        keywords: Optional[List[str]] = None,
+        before_started_at: Optional[str] = None,
+    ) -> List[int]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            sql = f"SELECT id FROM monitoring_runs WHERE ended_at IS NOT NULL AND substr(COALESCE(ended_at, started_at, ''), 1, 10) = {ph}"
+            params: List[Any] = [snapshot_date]
+            if before_started_at:
+                sql += f" AND ended_at < {ph}"
+                params.append(before_started_at)
+            if keywords:
+                placeholders = ",".join([ph] * len(keywords))
+                sql += f" AND keyword IN ({placeholders})"
+                params.extend(keywords)
+            sql += " ORDER BY ended_at ASC, started_at ASC, id ASC"
+            c.execute(sql, tuple(params))
+            rows = c.fetchall()
+            return [row[0] if not isinstance(row, dict) else row["id"] for row in rows]
+        finally:
+            conn.close()
+
     def _recent_snapshot_overview(self, snapshot_date: str, keywords: Optional[List[str]] = None) -> Dict[str, Any]:
         ph = self._ph()
         conn = self._adapter.get_connection()
@@ -1113,11 +1139,12 @@ class SentimentDB:
         active_batch = self.get_active_monitor_batch()
         cutoff_started_at = active_batch.get("started_at") if active_batch else None
         latest_completed_at = self._latest_completed_run_at(keywords=keywords, before_started_at=cutoff_started_at)
+        day_run_ids = self._completed_run_ids_for_date(snapshot_date, keywords=keywords, before_started_at=cutoff_started_at)
         active_threads = self._active_threads_for_date(snapshot_date, keywords=keywords)
         yesterday = (datetime.fromisoformat(snapshot_date) - timedelta(days=1)).strftime("%Y-%m-%d")
         empty_snapshot = self._recent_snapshot_overview(yesterday, keywords=keywords)
 
-        if not active_threads:
+        if not day_run_ids and not active_threads:
             return {
                 "snapshot_date": snapshot_date,
                 "updated_at": latest_completed_at,
@@ -1131,69 +1158,53 @@ class SentimentDB:
             }
 
         ph = self._ph()
-        active_ids = list(active_threads.keys())
-        placeholders = ",".join([ph] * len(active_ids))
+        run_placeholders = ",".join([ph] * len(day_run_ids)) if day_run_ids else None
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
-            params: List[Any] = list(active_ids)
-            run_join_sql = "JOIN monitoring_runs mr ON a.run_id = mr.id"
-            run_where_sql = " AND mr.ended_at IS NOT NULL"
-            item_run_join_sql = "JOIN monitoring_runs mr ON ia.run_id = mr.id"
-            item_run_where_sql = " AND mr.ended_at IS NOT NULL"
-            pr_cutoff_sql = " AND mr.ended_at IS NOT NULL"
-            if cutoff_started_at:
-                run_where_sql += f" AND mr.ended_at < {ph}"
-                item_run_where_sql += f" AND mr.ended_at < {ph}"
-                pr_cutoff_sql += f" AND mr.ended_at < {ph}"
-                params.append(cutoff_started_at)
-            c.execute(
-                f"""SELECT a.thread_id, a.run_id, a.sentiment, a.score, a.theme, a.reason,
+            analysis_rows: List[Dict[str, Any]] = []
+            item_analysis_rows: List[Dict[str, Any]] = []
+            pr_rows: List[Dict[str, Any]] = []
+
+            if day_run_ids:
+                c.execute(
+                    f"""
+                    SELECT a.thread_id, a.run_id, a.sentiment, a.score, a.theme, a.reason,
                            a.voice_source, a.analyzed_with, a.model_used, a.analyzed_at,
                            t.title, t.url, t.channel, t.board, t.published_at, t.first_seen_at,
                            t.push_count, t.boo_count, t.neutral_count, t.comment_count,
                            t.keyword
                     FROM analyses a
                     JOIN threads t ON a.thread_id = t.id
-                    {run_join_sql}
-                    WHERE a.thread_id IN ({placeholders}){run_where_sql}""",
-                tuple(params),
-            )
-            analysis_rows = [self._normalize_analysis_row(row) for row in self._adapter.fetchall_dict(c)]
+                    WHERE a.run_id IN ({run_placeholders})
+                    """,
+                    tuple(day_run_ids),
+                )
+                analysis_rows = [self._normalize_analysis_row(row) for row in self._adapter.fetchall_dict(c)]
 
-            item_params: List[Any] = list(active_ids)
-            if cutoff_started_at:
-                item_params.append(cutoff_started_at)
-            c.execute(
-                f"""SELECT ia.thread_item_id, ia.run_id, ia.sentiment, ia.score, ia.theme, ia.reason,
+                c.execute(
+                    f"""
+                    SELECT ia.thread_item_id, ia.run_id, ia.sentiment, ia.score, ia.theme, ia.reason,
                            ia.voice_source, ia.analyzed_with, ia.model_used, ia.analyzed_at,
                            ti.content, ti.author, ti.platform_item_id, ti.published_at,
                            t.channel, t.title, t.url, t.keyword, ti.thread_id
                     FROM item_analyses ia
                     JOIN thread_items ti ON ia.thread_item_id = ti.id
                     JOIN threads t ON ti.thread_id = t.id
-                    {item_run_join_sql}
-                    WHERE ti.thread_id IN ({placeholders}){item_run_where_sql}""",
-                tuple(item_params),
-            )
-            item_analysis_rows = [self._normalize_analysis_row(row) for row in self._adapter.fetchall_dict(c)]
+                    WHERE ia.run_id IN ({run_placeholders})
+                    """,
+                    tuple(day_run_ids),
+                )
+                item_analysis_rows = [self._normalize_analysis_row(row) for row in self._adapter.fetchall_dict(c)]
 
-            keyword_set = sorted({row.get("keyword") for row in analysis_rows if row.get("keyword")})
-            pr_rows: List[Dict[str, Any]] = []
-            if keyword_set:
-                pr_placeholders = ",".join([ph] * len(keyword_set))
-                pr_params: List[Any] = list(keyword_set)
-                if cutoff_started_at:
-                    pr_params.append(cutoff_started_at)
                 c.execute(
                     f"""
                     SELECT pr.*
                     FROM pr_reports pr
-                    JOIN monitoring_runs mr ON pr.run_id = mr.id
-                    WHERE pr.keyword IN ({pr_placeholders}) {pr_cutoff_sql}
-                    ORDER BY mr.ended_at DESC, pr.created_at DESC
+                    WHERE pr.run_id IN ({run_placeholders})
+                    ORDER BY pr.run_id DESC, pr.created_at DESC
                     """,
-                    tuple(pr_params),
+                    tuple(day_run_ids),
                 )
                 pr_rows = self._adapter.fetchall_dict(c)
         finally:
@@ -1218,16 +1229,6 @@ class SentimentDB:
             keyword = row.get("keyword")
             if keyword and keyword not in pr_by_keyword:
                 pr_by_keyword[keyword] = row
-
-        included_thread_ids = {
-            row["thread_id"] for row in analysis_rows if row.get("thread_id")
-        } | {
-            row["thread_id"] for row in item_analysis_rows if row.get("thread_id")
-        }
-        if included_thread_ids:
-            active_threads = {thread_id: data for thread_id, data in active_threads.items() if thread_id in included_thread_ids}
-        else:
-            active_threads = {}
 
         brand_map: Dict[str, Dict[str, Any]] = {}
         channel_counts = {"google_news": 0, "ptt": 0, "dcard": 0, "youtube": 0}
@@ -1269,7 +1270,7 @@ class SentimentDB:
             if channel in channel_counts:
                 channel_counts[channel] += 1
 
-            if row.get("sentiment") == "負面" and row.get("score", 0) >= 3:
+            if thread_id in active_threads and row.get("sentiment") == "負面" and row.get("score", 0) >= 3:
                 thread_ctx = active_threads.get(thread_id, {})
                 alert = {
                     "brand": kw,
