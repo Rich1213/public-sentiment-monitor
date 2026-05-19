@@ -2,7 +2,7 @@ import os
 import tempfile
 import unittest
 import hashlib
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from src.collectors.google_news_collector import GoogleNewsCollector
 from src.utils.db_manager import SentimentDB
@@ -267,6 +267,50 @@ class DashboardTodayTest(unittest.TestCase):
 
         self.db.close_monitor_batch(batch_id)
         self.assertIsNone(self.db.get_active_monitor_batch())
+
+    def test_dashboard_day_summary_freezes_at_last_completed_state_while_batch_running(self):
+        now = datetime.now()
+        stable_end = (now - timedelta(minutes=10)).replace(microsecond=0)
+        batch_start = (now - timedelta(minutes=5)).replace(microsecond=0)
+        in_progress_end = (now - timedelta(minutes=1)).replace(microsecond=0)
+
+        old_run = self.db.create_run("7-ELEVEN")
+        old_thread_id = self._seed_analysis(old_run, "7-ELEVEN", "https://example.com/old-stable", "上一版完整結果", score=3)
+        self.db.close_run(old_run, articles_found=1, articles_new=1)
+        self._execute(
+            "UPDATE threads SET published_at = ?, first_seen_at = ? WHERE id = ?",
+            ("2026-05-19T08:00:00", "2026-05-19T08:05:00", old_thread_id),
+        )
+        self._execute(
+            "UPDATE monitoring_runs SET ended_at = ? WHERE id = ?",
+            (stable_end.isoformat(), old_run),
+        )
+
+        batch_id = self.db.create_monitor_batch(["7-ELEVEN"])
+        self._execute(
+            "UPDATE monitor_batches SET started_at = ? WHERE id = ?",
+            (batch_start.isoformat(), batch_id),
+        )
+
+        new_run = self.db.create_run("7-ELEVEN")
+        new_thread_id = self._seed_analysis(new_run, "7-ELEVEN", "https://example.com/in-progress", "更新中的半套結果", score=4)
+        self.db.close_run(new_run, articles_found=1, articles_new=1)
+        self._execute(
+            "UPDATE threads SET published_at = ?, first_seen_at = ? WHERE id = ?",
+            ("2026-05-19T09:10:00", "2026-05-19T09:10:00", new_thread_id),
+        )
+        self._execute(
+            "UPDATE monitoring_runs SET ended_at = ? WHERE id = ?",
+            (in_progress_end.isoformat(), new_run),
+        )
+
+        summary = self.db.get_dashboard_day_summary(snapshot_date="2026-05-19")
+
+        self.assertIsNotNone(summary["active_batch"])
+        self.assertEqual(summary["updated_at"], stable_end.isoformat())
+        self.assertEqual(summary["total_articles"], 1)
+        self.assertIn("7-ELEVEN", summary["brand_map"])
+        self.assertEqual(summary["brand_map"]["7-ELEVEN"]["analyses"][0]["title"], "上一版完整結果")
 
     def test_save_daily_snapshots_persists_today_rows(self):
         run_id = self.db.create_run("7-ELEVEN")
