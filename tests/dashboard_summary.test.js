@@ -137,7 +137,7 @@ test('deriveProgressState shows active railway progress when run exists', () => 
 
   assert.equal(state.visible, true);
   assert.equal(state.brandLabel, '7-ELEVEN');
-  assert.match(state.statusText, /正在採集/);
+  assert.match(state.statusText, /正在更新/);
 });
 
 test('selectLatestCompletedRunsByKeyword keeps only the newest completed run per keyword', () => {

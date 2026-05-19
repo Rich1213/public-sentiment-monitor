@@ -73,12 +73,14 @@ class HealthResponse(BaseModel):
 class DashboardTodayResponse(BaseModel):
     snapshot_date: str
     updated_at: Optional[str] = None
+    latest_run_at: Optional[str] = None
     active_batch: Optional[dict] = None
     brand_map: dict
     channel_counts: dict
     all_alerts: list
     total_articles: int
     trend: Optional[dict] = None
+    empty_snapshot: Optional[dict] = None
 
 
 # ─────────────────────────────────────────────────────────────

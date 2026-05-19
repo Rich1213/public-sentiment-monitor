@@ -242,9 +242,11 @@ class SentimentDB:
             if self._adapter.is_postgres:
                 c.execute("ALTER TABLE pr_reports ADD COLUMN IF NOT EXISTS dashboard_summary TEXT")
                 c.execute("ALTER TABLE threads ADD COLUMN IF NOT EXISTS platform_id TEXT")
+                c.execute("ALTER TABLE threads ADD COLUMN IF NOT EXISTS first_seen_at TEXT")
                 c.execute("ALTER TABLE thread_items ADD COLUMN IF NOT EXISTS platform_item_id TEXT")
                 c.execute("ALTER TABLE thread_items ADD COLUMN IF NOT EXISTS like_count INTEGER")
                 c.execute("ALTER TABLE thread_items ADD COLUMN IF NOT EXISTS published_at TEXT")
+                c.execute("UPDATE threads SET first_seen_at = COALESCE(first_seen_at, published_at, fetched_at)")
                 c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_threads_platform_id ON threads(platform_id)")
                 c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_thread_items_platform_item_id ON thread_items(platform_item_id)")
                 c.execute("""CREATE TABLE IF NOT EXISTS monitor_batches (
@@ -285,6 +287,9 @@ class SentimentDB:
                 thread_cols = [row["name"] for row in c.fetchall()]
                 if "platform_id" not in thread_cols:
                     c.execute("ALTER TABLE threads ADD COLUMN platform_id TEXT")
+                if "first_seen_at" not in thread_cols:
+                    c.execute("ALTER TABLE threads ADD COLUMN first_seen_at TEXT")
+                c.execute("UPDATE threads SET first_seen_at = COALESCE(first_seen_at, published_at, fetched_at)")
                 c.execute("PRAGMA table_info(thread_items)")
                 item_cols = [row["name"] for row in c.fetchall()]
                 if "platform_item_id" not in item_cols:
@@ -383,6 +388,7 @@ class SentimentDB:
                 board        TEXT,
                 platform_id  TEXT UNIQUE,
                 keyword      TEXT,
+                first_seen_at TEXT,
                 published_at TEXT,
                 fetched_at   TEXT    DEFAULT (datetime('now')),
                 push_count    INTEGER,
@@ -522,6 +528,7 @@ class SentimentDB:
                 board        TEXT,
                 platform_id  TEXT UNIQUE,
                 keyword      TEXT,
+                first_seen_at TEXT,
                 published_at TEXT,
                 fetched_at   TIMESTAMPTZ DEFAULT NOW(),
                 push_count    INTEGER,
@@ -698,6 +705,19 @@ class SentimentDB:
 
     def _today_str(self) -> str:
         return datetime.now().strftime("%Y-%m-%d")
+
+    def _day_start_str(self, day: str) -> str:
+        return f"{day}T00:00:00"
+
+    def _days_since(self, start_at: Optional[str], end_date: str) -> int:
+        if not start_at:
+            return 0
+        try:
+            start_date = datetime.fromisoformat(str(start_at).replace("Z", "+00:00")).date()
+            end_day = datetime.fromisoformat(end_date).date()
+        except Exception:
+            return 0
+        return max((end_day - start_date).days, 0)
 
     def _json_dumps(self, value: Any) -> str:
         def _default(obj: Any):
@@ -966,76 +986,182 @@ class SentimentDB:
         finally:
             conn.close()
 
-    def get_dashboard_day_summary(self, snapshot_date: str = None, keywords: Optional[List[str]] = None) -> Dict[str, Any]:
-        snapshot_date = snapshot_date or self._today_str()
+    def _latest_completed_run_at(self, keywords: Optional[List[str]] = None) -> Optional[str]:
         ph = self._ph()
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
-            sql = f"SELECT * FROM monitoring_runs WHERE ended_at IS NOT NULL AND SUBSTR(started_at, 1, 10) = {ph}"
+            sql = f"SELECT ended_at, started_at FROM monitoring_runs WHERE ended_at IS NOT NULL"
+            params: List[Any] = []
+            if keywords:
+                placeholders = ",".join([ph] * len(keywords))
+                sql += f" AND keyword IN ({placeholders})"
+                params.extend(keywords)
+            sql += " ORDER BY ended_at DESC, started_at DESC LIMIT 1"
+            c.execute(sql, tuple(params))
+            row = c.fetchone()
+            if not row:
+                return None
+            data = self._adapter.fetchone_dict(c, row)
+            return data.get("ended_at") or data.get("started_at")
+        finally:
+            conn.close()
+
+    def _recent_snapshot_overview(self, snapshot_date: str, keywords: Optional[List[str]] = None) -> Dict[str, Any]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            sql = (
+                "SELECT snapshot_date, keyword, snapshot_at, risk_score, article_count, pos_count, neu_count, neg_count, avg_score "
+                f"FROM daily_snapshots WHERE snapshot_date = {ph}"
+            )
             params: List[Any] = [snapshot_date]
             if keywords:
                 placeholders = ",".join([ph] * len(keywords))
                 sql += f" AND keyword IN ({placeholders})"
                 params.extend(keywords)
-            sql += " ORDER BY started_at ASC"
+            sql += " ORDER BY keyword ASC"
             c.execute(sql, tuple(params))
-            runs = self._adapter.fetchall_dict(c)
+            rows = self._adapter.fetchall_dict(c)
+        finally:
+            conn.close()
 
-            active_batch = self.get_active_monitor_batch()
-            if not runs:
-                return {
-                    "snapshot_date": snapshot_date,
-                    "updated_at": None,
-                    "active_batch": active_batch,
-                    "brand_map": {},
-                    "channel_counts": {"google_news": 0, "ptt": 0, "dcard": 0, "youtube": 0},
-                    "all_alerts": [],
-                    "total_articles": 0,
-                }
+        return {
+            "snapshot_date": snapshot_date,
+            "rows": rows,
+            "total_articles": sum(int(row.get("article_count") or 0) for row in rows),
+            "max_risk_score": max([int(row.get("risk_score") or 0) for row in rows], default=0),
+        }
 
-            run_ids = [int(r["id"]) for r in runs]
-            latest_run_by_keyword = {}
-            for run in runs:
-                latest_run_by_keyword[run["keyword"]] = run
+    def _active_threads_for_date(self, snapshot_date: str, keywords: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
+        ph = self._ph()
+        day_start = self._day_start_str(snapshot_date)
+        day_end = (datetime.fromisoformat(snapshot_date) + timedelta(days=1)).strftime("%Y-%m-%dT00:00:00")
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            params: List[Any] = [day_end, day_start, day_end, day_start, day_end]
+            keyword_sql = ""
+            if keywords:
+                placeholders = ",".join([ph] * len(keywords))
+                keyword_sql = f" AND t.keyword IN ({placeholders})"
+                params.extend(keywords)
+            c.execute(
+                f"""
+                SELECT
+                    t.id,
+                    t.keyword,
+                    t.channel,
+                    t.title,
+                    t.url,
+                    t.board,
+                    t.published_at,
+                    t.first_seen_at,
+                    MAX(CASE WHEN ti.published_at < {ph} THEN ti.published_at END) AS latest_item_published_at
+                FROM threads t
+                LEFT JOIN thread_items ti ON ti.thread_id = t.id
+                WHERE (
+                    (COALESCE(t.first_seen_at, t.published_at, t.fetched_at) >= {ph}
+                    AND COALESCE(t.first_seen_at, t.published_at, t.fetched_at) < {ph})
+                    OR EXISTS (
+                        SELECT 1
+                        FROM thread_items ti2
+                        WHERE ti2.thread_id = t.id AND ti2.published_at >= {ph} AND ti2.published_at < {ph}
+                    )
+                )
+                {keyword_sql}
+                GROUP BY t.id, t.keyword, t.channel, t.title, t.url, t.board, t.published_at, t.first_seen_at
+                """,
+                tuple(params),
+            )
+            rows = self._adapter.fetchall_dict(c)
+        finally:
+            conn.close()
 
-            run_placeholders = ",".join([ph] * len(run_ids))
+        active_threads: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            data = dict(row)
+            first_seen_at = data.get("first_seen_at") or data.get("published_at")
+            recent_activity_at = max(
+                [value for value in [data.get("latest_item_published_at"), first_seen_at, data.get("published_at")] if value],
+                default="",
+            )
+            data["first_seen_at"] = first_seen_at
+            data["recent_activity_at"] = recent_activity_at
+            data["ongoing_days"] = self._days_since(first_seen_at, snapshot_date) if first_seen_at and str(first_seen_at)[:10] < snapshot_date else 0
+            active_threads[data["id"]] = data
+        return active_threads
+
+    def get_dashboard_day_summary(self, snapshot_date: str = None, keywords: Optional[List[str]] = None) -> Dict[str, Any]:
+        snapshot_date = snapshot_date or self._today_str()
+        active_batch = self.get_active_monitor_batch()
+        latest_completed_at = self._latest_completed_run_at(keywords=keywords)
+        active_threads = self._active_threads_for_date(snapshot_date, keywords=keywords)
+        yesterday = (datetime.fromisoformat(snapshot_date) - timedelta(days=1)).strftime("%Y-%m-%d")
+        empty_snapshot = self._recent_snapshot_overview(yesterday, keywords=keywords)
+
+        if not active_threads:
+            return {
+                "snapshot_date": snapshot_date,
+                "updated_at": latest_completed_at,
+                "active_batch": active_batch,
+                "brand_map": {},
+                "channel_counts": {"google_news": 0, "ptt": 0, "dcard": 0, "youtube": 0},
+                "all_alerts": [],
+                "total_articles": 0,
+                "latest_run_at": latest_completed_at,
+                "empty_snapshot": empty_snapshot,
+            }
+
+        ph = self._ph()
+        active_ids = list(active_threads.keys())
+        placeholders = ",".join([ph] * len(active_ids))
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            params: List[Any] = list(active_ids)
             c.execute(
                 f"""SELECT a.thread_id, a.run_id, a.sentiment, a.score, a.theme, a.reason,
                            a.voice_source, a.analyzed_with, a.model_used, a.analyzed_at,
-                           t.title, t.url, t.channel, t.board, t.published_at,
+                           t.title, t.url, t.channel, t.board, t.published_at, t.first_seen_at,
                            t.push_count, t.boo_count, t.neutral_count, t.comment_count,
-                           r.keyword
+                           t.keyword
                     FROM analyses a
                     JOIN threads t ON a.thread_id = t.id
-                    JOIN monitoring_runs r ON a.run_id = r.id
-                    WHERE a.run_id IN ({run_placeholders})""",
-                tuple(run_ids),
+                    WHERE a.thread_id IN ({placeholders})""",
+                tuple(params),
             )
             analysis_rows = [self._normalize_analysis_row(row) for row in self._adapter.fetchall_dict(c)]
 
             c.execute(
                 f"""SELECT ia.thread_item_id, ia.run_id, ia.sentiment, ia.score, ia.theme, ia.reason,
                            ia.voice_source, ia.analyzed_with, ia.model_used, ia.analyzed_at,
-                           ti.content, ti.author, ti.platform_item_id, t.channel, t.title, t.url,
-                           r.keyword
+                           ti.content, ti.author, ti.platform_item_id, ti.published_at,
+                           t.channel, t.title, t.url, t.keyword, ti.thread_id
                     FROM item_analyses ia
                     JOIN thread_items ti ON ia.thread_item_id = ti.id
                     JOIN threads t ON ti.thread_id = t.id
-                    JOIN monitoring_runs r ON ia.run_id = r.id
-                    WHERE ia.run_id IN ({run_placeholders})""",
-                tuple(run_ids),
+                    WHERE ti.thread_id IN ({placeholders})""",
+                tuple(params),
             )
             item_analysis_rows = [self._normalize_analysis_row(row) for row in self._adapter.fetchall_dict(c)]
 
-            c.execute(
-                f"""SELECT pr.*
+            keyword_set = sorted({row.get("keyword") for row in analysis_rows if row.get("keyword")})
+            pr_rows: List[Dict[str, Any]] = []
+            if keyword_set:
+                pr_placeholders = ",".join([ph] * len(keyword_set))
+                c.execute(
+                    f"""
+                    SELECT pr.*
                     FROM pr_reports pr
-                    WHERE pr.run_id IN ({run_placeholders})
-                    ORDER BY pr.created_at ASC""",
-                tuple(run_ids),
-            )
-            pr_rows = self._adapter.fetchall_dict(c)
+                    JOIN monitoring_runs mr ON pr.run_id = mr.id
+                    WHERE pr.keyword IN ({pr_placeholders}) AND mr.ended_at IS NOT NULL
+                    ORDER BY mr.ended_at DESC, pr.created_at DESC
+                    """,
+                    tuple(keyword_set),
+                )
+                pr_rows = self._adapter.fetchall_dict(c)
         finally:
             conn.close()
 
@@ -1054,15 +1180,13 @@ class SentimentDB:
                 items_by_key[key] = row
 
         pr_by_keyword: Dict[str, Dict[str, Any]] = {}
-        latest_run_id_map = {kw: int(run["id"]) for kw, run in latest_run_by_keyword.items()}
         for row in pr_rows:
             keyword = row.get("keyword")
-            if keyword and latest_run_id_map.get(keyword) == row.get("run_id"):
+            if keyword and keyword not in pr_by_keyword:
                 pr_by_keyword[keyword] = row
 
         brand_map: Dict[str, Dict[str, Any]] = {}
         channel_counts = {"google_news": 0, "ptt": 0, "dcard": 0, "youtube": 0}
-        unique_today_threads = set()
         seen_global_alerts = set()
         all_alerts: List[Dict[str, Any]] = []
 
@@ -1082,7 +1206,7 @@ class SentimentDB:
                     "alerts": [],
                     "pr": None,
                     "dashboardSummary": None,
-                    "lastRunId": latest_run_id_map.get(kw),
+                    "lastRunId": row.get("run_id"),
                 },
             )
             brand["total"] += 1
@@ -1097,13 +1221,12 @@ class SentimentDB:
             brand["analyses"].append(row)
 
             thread_id = row["thread_id"]
-            if thread_id not in unique_today_threads:
-                unique_today_threads.add(thread_id)
-                channel = row.get("channel")
-                if channel in channel_counts:
-                    channel_counts[channel] += 1
+            channel = row.get("channel")
+            if channel in channel_counts:
+                channel_counts[channel] += 1
 
             if row.get("sentiment") == "負面" and row.get("score", 0) >= 3:
+                thread_ctx = active_threads.get(thread_id, {})
                 alert = {
                     "brand": kw,
                     "channel": row.get("channel") or "",
@@ -1112,6 +1235,9 @@ class SentimentDB:
                     "score": row.get("score") or 0,
                     "theme": row.get("theme") or "—",
                     "published": row.get("published_at") or "",
+                    "recent_activity_at": thread_ctx.get("recent_activity_at") or "",
+                    "first_seen_at": thread_ctx.get("first_seen_at") or "",
+                    "ongoing_days": thread_ctx.get("ongoing_days") or 0,
                     "thread_id": thread_id,
                 }
                 brand["alerts"].append(alert)
@@ -1135,7 +1261,7 @@ class SentimentDB:
                     "alerts": [],
                     "pr": None,
                     "dashboardSummary": None,
-                    "lastRunId": latest_run_id_map.get(kw),
+                    "lastRunId": row.get("run_id"),
                 },
             )
             brand["itemAnalyses"].append(row)
@@ -1146,16 +1272,20 @@ class SentimentDB:
                 brand["pr"] = pr_row.get("report")
                 brand["dashboardSummary"] = pr_row.get("dashboard_summary")
 
-        updated_at = max((run.get("ended_at") or run.get("started_at") or "") for run in runs)
-
         return {
             "snapshot_date": snapshot_date,
-            "updated_at": updated_at,
+            "updated_at": latest_completed_at,
             "active_batch": active_batch,
             "brand_map": brand_map,
             "channel_counts": channel_counts,
-            "all_alerts": sorted(all_alerts, key=lambda row: row.get("score", 0), reverse=True),
-            "total_articles": len(unique_today_threads),
+            "all_alerts": sorted(
+                all_alerts,
+                key=lambda row: (row.get("score", 0), row.get("recent_activity_at") or ""),
+                reverse=True,
+            ),
+            "total_articles": len(active_threads),
+            "latest_run_at": latest_completed_at,
+            "empty_snapshot": empty_snapshot,
         }
 
     def save_daily_snapshots(self, snapshot_date: str = None, keywords: Optional[List[str]] = None) -> int:
@@ -1173,11 +1303,21 @@ class SentimentDB:
         update_cols = columns[2:]
         sql = self._upsert_sql("daily_snapshots", columns, ["snapshot_date", "keyword"], update_cols)
 
+        today = self._today_str()
+        freeze_mode = snapshot_date < today
+
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
             written = 0
             for keyword, brand in brand_map.items():
+                if freeze_mode:
+                    c.execute(
+                        f"SELECT 1 FROM daily_snapshots WHERE snapshot_date = {self._ph()} AND keyword = {self._ph()} LIMIT 1",
+                        (snapshot_date, keyword),
+                    )
+                    if c.fetchone():
+                        continue
                 total = max(int(brand.get("total", 0)), 1)
                 negative_count = int(brand.get("neg", 0))
                 scores = list(brand.get("scores", []))
@@ -1256,58 +1396,39 @@ class SentimentDB:
         finally:
             conn.close()
 
-    def get_dashboard_trend(self, days: int = 7, keywords: Optional[List[str]] = None) -> Dict[str, Dict[str, Optional[float]]]:
+    def get_dashboard_trend(self, days: int = 7, keywords: Optional[List[str]] = None, today: Optional[str] = None) -> Dict[str, Dict[str, Optional[float]]]:
+        today = today or self._today_str()
+        end_day = datetime.fromisoformat(today).date()
+        start_day = end_day - timedelta(days=days - 1)
         ph = self._ph()
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
-            c.execute(
-                f"SELECT * FROM monitoring_runs WHERE ended_at IS NOT NULL ORDER BY started_at DESC LIMIT {ph}",
-                (max(days * max(len(keywords or []), 4) * 8, 80),),
-            )
-            runs = self._adapter.fetchall_dict(c)
-            if not runs:
-                return {}
-
-            run_ids = [int(r["id"]) for r in runs]
-            run_placeholders = ",".join([ph] * len(run_ids))
-            c.execute(
-                f"""SELECT a.thread_id, a.run_id, a.score, a.analyzed_at, r.keyword, r.started_at
-                    FROM analyses a
-                    JOIN monitoring_runs r ON a.run_id = r.id
-                    WHERE a.run_id IN ({run_placeholders})""",
-                tuple(run_ids),
-            )
-            rows = [self._normalize_analysis_row(row) for row in self._adapter.fetchall_dict(c)]
+            sql = f"""
+                SELECT snapshot_date, keyword, avg_score
+                FROM daily_snapshots
+                WHERE snapshot_date >= {ph} AND snapshot_date < {ph}
+            """
+            params: List[Any] = [start_day.strftime("%Y-%m-%d"), today]
+            if keywords:
+                placeholders = ",".join([ph] * len(keywords))
+                sql += f" AND keyword IN ({placeholders})"
+                params.extend(keywords)
+            sql += " ORDER BY snapshot_date ASC"
+            c.execute(sql, tuple(params))
+            snapshot_rows = self._adapter.fetchall_dict(c)
         finally:
             conn.close()
 
-        dedup: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
-        for row in rows:
-            keyword = row.get("keyword")
-            if keywords and keyword not in keywords:
-                continue
-            date = (row.get("started_at") or "")[:10]
-            if not date:
-                continue
-            key = (keyword, date, row["thread_id"])
-            prev = dedup.get(key)
-            if prev is None or (row.get("analyzed_at") or "") >= (prev.get("analyzed_at") or ""):
-                dedup[key] = row
-
-        by_brand_date: Dict[str, Dict[str, List[float]]] = {}
-        for row in dedup.values():
-            keyword = row["keyword"]
-            date = row["started_at"][:10]
-            by_brand_date.setdefault(keyword, {}).setdefault(date, []).append(float(row["score"]))
-
-        all_dates = sorted({date for brand_rows in by_brand_date.values() for date in brand_rows.keys()})[-days:]
         trend: Dict[str, Dict[str, Optional[float]]] = {}
-        for keyword, date_map in by_brand_date.items():
-            trend[keyword] = {}
-            for date in all_dates:
-                scores = date_map.get(date, [])
-                trend[keyword][date] = round(sum(scores) / len(scores), 2) if scores else None
+        for row in snapshot_rows:
+            trend.setdefault(row["keyword"], {})[row["snapshot_date"]] = row.get("avg_score")
+
+        today_summary = self.get_dashboard_day_summary(snapshot_date=today, keywords=keywords)
+        for keyword, brand in (today_summary.get("brand_map") or {}).items():
+            scores = [float(score) for score in brand.get("scores", []) if score is not None]
+            trend.setdefault(keyword, {})[today] = round(sum(scores) / len(scores), 2) if scores else None
+
         return trend
 
     def get_thread_item_id_by_platform_item_id(self, platform_item_id: str) -> Optional[int]:
@@ -1383,11 +1504,12 @@ class SentimentDB:
         source_id = self.get_source_id(source_name)
         ph = self._ph()
         now = datetime.now().isoformat()
+        first_seen_at = now
 
         cols = ["id","source_id","channel","title","url","author","board","platform_id","keyword",
-                "published_at","fetched_at","push_count","boo_count","neutral_count","comment_count"]
+                "first_seen_at","published_at","fetched_at","push_count","boo_count","neutral_count","comment_count"]
         vals = (thread_id, source_id, channel, title, url, author, board, platform_id, keyword,
-                published_at, now, push_count, boo_count, neutral_count, comment_count)
+                first_seen_at, published_at, now, push_count, boo_count, neutral_count, comment_count)
         ph_list = ", ".join([ph] * len(cols))
         cols_str = ", ".join(cols)
 
@@ -1399,12 +1521,23 @@ class SentimentDB:
                                "keyword","published_at","fetched_at",
                                "push_count","boo_count","neutral_count","comment_count"]
                 updates = ", ".join(f"{col} = EXCLUDED.{col}" for col in update_cols)
+                updates += ", first_seen_at = COALESCE(threads.first_seen_at, EXCLUDED.first_seen_at)"
                 sql = (
                     f"INSERT INTO threads ({cols_str}) VALUES ({ph_list}) "
                     f"ON CONFLICT (id) DO UPDATE SET {updates}"
                 )
             else:
-                sql = f"INSERT OR REPLACE INTO threads ({cols_str}) VALUES ({ph_list})"
+                updates = ", ".join(
+                    f"{col} = excluded.{col}" for col in [
+                        "source_id", "channel", "title", "url", "author", "board", "platform_id",
+                        "keyword", "published_at", "fetched_at", "push_count", "boo_count", "neutral_count", "comment_count"
+                    ]
+                )
+                sql = (
+                    f"INSERT INTO threads ({cols_str}) VALUES ({ph_list}) "
+                    f"ON CONFLICT(id) DO UPDATE SET {updates}, "
+                    f"first_seen_at = COALESCE(threads.first_seen_at, excluded.first_seen_at)"
+                )
             c.execute(sql, vals)
             conn.commit()
         finally:

@@ -145,19 +145,19 @@
 
   <!-- ── 採集進度列（採集中才顯示）── -->
   <div id="monitor-progress" style="display:none; margin-bottom:12px">
-    <div style="background:#1a1d2e; border:1px solid #2d3148; border-radius:12px; padding:14px 18px;">
+    <div style="background:#1a1d2e; border:1px solid #2d3148; border-radius:12px; padding:10px 14px;">
       <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px">
         <div style="display:flex; align-items:center; gap:10px">
           <span class="spinner" style="width:14px;height:14px;border-width:2px"></span>
-          <span style="font-size:13px; font-weight:600; color:#f1f5f9">採集進行中</span>
+          <span style="font-size:12px; font-weight:600; color:#f1f5f9">資料更新中</span>
           <span id="progress-brand-tag" style="font-size:11px; background:#252840; color:#818cf8; padding:2px 8px; border-radius:4px; border:1px solid #3d4268">—</span>
         </div>
-        <span id="progress-count" style="font-size:11px; color:#64748b">品牌 0 / 5</span>
+        <span id="progress-count" style="font-size:11px; color:#64748b">同步中</span>
       </div>
       <div style="background:#0f1117; border-radius:6px; height:6px; overflow:hidden">
         <div id="progress-bar" style="height:100%; width:0%; background:linear-gradient(90deg,#7c3aed,#818cf8); transition:width 0.5s ease; border-radius:6px"></div>
       </div>
-      <div id="progress-status" style="font-size:11px; color:#64748b; margin-top:8px">等待採集任務啟動...</div>
+      <div id="progress-status" style="font-size:11px; color:#64748b; margin-top:8px">等待背景更新啟動...</div>
     </div>
   </div>
 
@@ -192,7 +192,7 @@
   </div>
 
   <!-- ── Zone 3: Alert Table ── -->
-  <div class="section-header"><span class="zone-badge">3</span> 高強度負面警報</div>
+  <div class="section-header"><span class="zone-badge">3</span> 高強度負面警報 <span style="font-size:11px; color:#64748b; margin-left:8px">僅顯示今日有新訊號的討論</span></div>
   <div class="card" style="margin-bottom:16px">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
       <div class="filter-tabs" id="brand-tabs">
@@ -239,6 +239,20 @@ const { normalizeScore, buildPrimarySummary, getArticleRiskBadge, deriveProgress
 let allAlerts = [];
 let trendChart = null;
 
+function formatTimeLabel(raw) {
+  if (!raw) return '—';
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return String(raw).slice(5, 16).replace('T', ' ');
+  return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+}
+
+function formatSnapshotOverview(snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.rows) || snapshot.rows.length === 0) return '昨日無可用快照';
+  return snapshot.rows
+    .map(row => `${row.keyword} ${row.article_count || 0} 篇 / 風險 ${row.risk_score || 0}`)
+    .join(' · ');
+}
+
 async function loadData() {
   try {
     const [healthRes, todayRes] = await Promise.all([
@@ -253,7 +267,7 @@ async function loadData() {
     if (today.brand_map && Object.keys(today.brand_map).length > 0) {
       processTodaySummary(today);
     } else {
-      showEmptyState();
+      showEmptyState(today);
     }
   } catch (e) {
     document.getElementById('status-label').textContent = 'API 連線失敗';
@@ -265,7 +279,7 @@ async function loadData() {
 function updateStatus(health, today) {
   document.getElementById('status-label').textContent = 'API 正常';
   document.getElementById('status-dot').style.background = '#10b981';
-  const ts = today && today.updated_at ? new Date(today.updated_at) : new Date(health.timestamp);
+  const ts = today && (today.updated_at || today.latest_run_at) ? new Date(today.updated_at || today.latest_run_at) : new Date(health.timestamp);
   document.getElementById('last-update').textContent = `更新：${ts.toLocaleTimeString('zh-TW')}`;
 }
 
@@ -318,7 +332,7 @@ function renderBrandCards(brandMap) {
 
   grid.innerHTML = BRANDS.map(brand => {
     const b = brandMap[brand];
-    if (!b) return `<div class="brand-card"><div class="brand-name">${brand}</div><div style="font-size:11px;color:#475569">本次未監控</div></div>`;
+    if (!b) return `<div class="brand-card"><div class="brand-name">${brand}</div><div style="font-size:11px;color:#475569">今日無新訊號</div></div>`;
     const total = b.total || 1;
     const posW = Math.round(b.pos / total * 100);
     const neuW = Math.round(b.neu / total * 100);
@@ -401,20 +415,23 @@ function renderAlertTable(alerts) {
 
   wrap.innerHTML = `<table class="alert-table">
     <thead><tr>
-      <th>品牌</th><th>渠道</th><th>標題</th><th>公關風險</th><th>主題</th><th>時間</th>
+      <th>品牌</th><th>渠道</th><th>標題</th><th>公關風險</th><th>主題</th><th>最近活動</th>
     </tr></thead>
     <tbody>${alerts.slice(0, 20).map(a => {
       const sc = Math.round(a.score) || 1;
       const { cls, icon, label } = getArticleRiskBadge(sc);
       const ch = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', youtube: 'YouTube' }[a.channel] || a.channel;
-      const date = a.published ? a.published.slice(0, 10) : '—';
+      const recentActivity = formatTimeLabel(a.recent_activity_at || a.published);
+      const ongoingBadge = a.ongoing_days > 0
+        ? `<div style="margin-top:4px"><span class="risk-pill risk-pill-medium" style="margin-top:0; font-size:10px; padding:2px 8px">議題延燒 ${a.ongoing_days} 天</span></div>`
+        : '';
       return `<tr>
         <td style="color:#e2e8f0; font-weight:500">${a.brand}</td>
         <td><span class="ch-badge">${ch}</span></td>
-        <td><a class="article-link" href="${a.url}" target="_blank" rel="noopener">${(a.title || '').slice(0, 45)}${a.title && a.title.length > 45 ? '…' : ''}</a></td>
+        <td><a class="article-link" href="${a.url}" target="_blank" rel="noopener">${(a.title || '').slice(0, 45)}${a.title && a.title.length > 45 ? '…' : ''}</a>${ongoingBadge}</td>
         <td><span class="score-badge ${cls}">${icon} ${sc} ${label}</span></td>
         <td style="color:#64748b">${a.theme}</td>
-        <td style="color:#475569">${date}</td>
+        <td style="color:#475569">${recentActivity}</td>
       </tr>`;
     }).join('')}</tbody>
   </table>`;
@@ -463,16 +480,22 @@ function renderPRStrategy(brandMap) {
     (primary.pr ? `\n\n補充策略建議：\n${primary.pr.slice(0, 500)}` : '');
 }
 
-function showEmptyState(msg) {
-  const hint = msg || '點「更新輿情資料」執行第一次採集';
-  document.getElementById('brand-grid').innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📭</div><div class="empty-text">尚無監控資料<br><span style="font-size:11px;color:#334155;margin-top:6px;display:block">${hint}</span></div></div>`;
-  document.getElementById('alert-table-wrap').innerHTML = `<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">尚無資料</div></div>`;
-  document.getElementById('channel-bars').innerHTML = `<div style="color:#475569;font-size:12px;padding:20px 0">尚無渠道資料</div>`;
+function showEmptyState(today) {
+  const latestRun = today?.latest_run_at ? formatTimeLabel(today.latest_run_at) : null;
+  const snapshotSummary = formatSnapshotOverview(today?.empty_snapshot);
+  const hint = latestRun
+    ? `今日尚無新訊號 · 最近一次採集：${latestRun}`
+    : '點「更新輿情資料」執行第一次採集';
+  document.getElementById('brand-grid').innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📭</div><div class="empty-text">${hint}<br><span style="font-size:11px;color:#334155;margin-top:6px;display:block">${snapshotSummary}</span></div></div>`;
+  document.getElementById('alert-table-wrap').innerHTML = `<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">今日尚無需要處理的高強度負面議題</div></div>`;
+  document.getElementById('channel-bars').innerHTML = `<div style="color:#475569;font-size:12px;padding:20px 0">${snapshotSummary}</div>`;
   ['kpi-alerts','kpi-articles'].forEach(id => document.getElementById(id).textContent = '0');
   document.getElementById('kpi-narrative').textContent = hint;
-  document.getElementById('kpi-alert-note').textContent = '等待更多資料';
-  document.getElementById('status-label').textContent = 'API 正常 · 無資料';
-  document.getElementById('last-update').textContent = `更新：${new Date().toLocaleTimeString('zh-TW')}`;
+  document.getElementById('kpi-alert-note').textContent = latestRun ? '今日暫無危機訊號' : '等待更多資料';
+  document.getElementById('status-label').textContent = latestRun ? 'API 正常 · 今日無新訊號' : 'API 正常 · 無資料';
+  if (latestRun) {
+    document.getElementById('last-update').textContent = `更新：${latestRun}`;
+  }
 }
 
 // ── 採集進度追蹤 ─────────────────────────────────────────
@@ -558,7 +581,7 @@ async function triggerMonitor() {
 
 function showProgressPanel() {
   document.getElementById('monitor-progress').style.display = 'block';
-  setProgressStatus(0, '—', '任務已觸發，等待 Railway 啟動...');
+  setProgressStatus(0, '更新中', '任務已觸發，等待背景更新完成...');
 }
 
 function hideProgressPanel() {
@@ -605,7 +628,7 @@ async function pollMonitorProgress() {
 
     showProgressPanel();
     setProgressStatus(state.pct, state.brandLabel, state.statusText);
-    document.getElementById('progress-count').textContent = state.countText;
+    document.getElementById('progress-count').textContent = state.completed ? '更新完成' : '同步中';
 
     if (state.completed) {
       clearInterval(monitorPoller);

@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime, timedelta
 
 from src.utils.db_manager import SentimentDB
 from src.utils.score_utils import normalize_score
@@ -77,8 +78,10 @@ class ScoreCompatTest(unittest.TestCase):
             conn = db.adapter.get_connection()
             try:
                 c = conn.cursor()
-                c.execute("UPDATE monitoring_runs SET started_at = '2026-05-18T00:00:00' WHERE id = ?", (run_old,))
-                c.execute("UPDATE monitoring_runs SET started_at = '2026-05-18T23:59:00' WHERE id = ?", (run_new,))
+                old_started_at = (datetime.now() - timedelta(hours=2)).isoformat()
+                new_started_at = (datetime.now() - timedelta(minutes=5)).isoformat()
+                c.execute("UPDATE monitoring_runs SET started_at = ? WHERE id = ?", (old_started_at, run_old))
+                c.execute("UPDATE monitoring_runs SET started_at = ? WHERE id = ?", (new_started_at, run_new))
                 conn.commit()
             finally:
                 conn.close()

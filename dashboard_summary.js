@@ -336,13 +336,12 @@
     if (activeRun) {
       const doneCount = doneRuns.length;
       const pct = Math.round((doneCount / totalExpected) * 90) + 5;
-      const articles = doneRuns.reduce((sum, r) => sum + (r.articles_found || 0), 0);
       return {
         visible: true,
         pct,
         brandLabel: activeRun.keyword,
         countText: `品牌 ${doneCount + 1} / ${totalExpected}`,
-        statusText: `正在採集「${activeRun.keyword}」· 已完成 ${doneCount} / ${totalExpected} 個品牌 · 累計 ${articles} 篇`,
+        statusText: `正在更新「${activeRun.keyword}」相關輿情，完成後會自動刷新今日危機結果。`,
       };
     }
 
@@ -353,7 +352,7 @@
         pct: 100,
         brandLabel: '完成 ✓',
         countText: `品牌 ${doneRuns.length} / ${totalExpected}`,
-        statusText: `採集完成！共 ${totalArticles} 篇文章，重新整理資料中...`,
+        statusText: `更新完成，正在整理今日危機結果...`,
         completed: true,
       };
     }
@@ -364,7 +363,7 @@
         pct: 5,
         brandLabel: '啟動中',
         countText: `品牌 0 / ${totalExpected}`,
-        statusText: '等待 Railway 背景任務啟動...',
+        statusText: '等待背景更新啟動...',
       };
     }
 
