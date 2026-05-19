@@ -1041,7 +1041,7 @@ class SentimentDB:
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
-            params: List[Any] = [day_end, day_start, day_end, day_start, day_end]
+            params: List[Any] = [day_end, day_start, day_end, day_start, day_end, day_start, day_end]
             keyword_sql = ""
             if keywords:
                 placeholders = ",".join([ph] * len(keywords))
@@ -1062,12 +1062,24 @@ class SentimentDB:
                 FROM threads t
                 LEFT JOIN thread_items ti ON ti.thread_id = t.id
                 WHERE (
-                    (COALESCE(t.first_seen_at, t.published_at, t.fetched_at) >= {ph}
-                    AND COALESCE(t.first_seen_at, t.published_at, t.fetched_at) < {ph})
+                    (
+                        (
+                            t.published_at >= {ph}
+                            AND t.published_at < {ph}
+                        )
+                        OR (
+                            t.published_at IS NULL
+                            AND COALESCE(t.first_seen_at, t.fetched_at) >= {ph}
+                            AND COALESCE(t.first_seen_at, t.fetched_at) < {ph}
+                        )
+                    )
                     OR EXISTS (
                         SELECT 1
                         FROM thread_items ti2
-                        WHERE ti2.thread_id = t.id AND ti2.published_at >= {ph} AND ti2.published_at < {ph}
+                        WHERE ti2.thread_id = t.id
+                          AND ti2.item_type <> 'main'
+                          AND ti2.published_at >= {ph}
+                          AND ti2.published_at < {ph}
                     )
                 )
                 {keyword_sql}

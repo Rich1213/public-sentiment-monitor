@@ -323,6 +323,29 @@ class DashboardTodayTest(unittest.TestCase):
         self.assertEqual(summary["all_alerts"][0]["recent_activity_at"], "2026-05-19T10:32:00")
         self.assertEqual(summary["all_alerts"][0]["ongoing_days"], 60)
 
+    def test_dashboard_day_summary_excludes_old_youtube_video_without_today_comment_activity(self):
+        run_id = self.db.create_run("7-ELEVEN")
+        thread_id = self._seed_analysis(
+            run_id,
+            "7-ELEVEN",
+            "https://www.youtube.com/watch?v=legacy-video",
+            "兩年前的 YouTube 舊片",
+        )
+        self.db.close_run(run_id, articles_found=1, articles_new=1)
+        self._execute(
+            "UPDATE threads SET channel = ?, first_seen_at = ?, published_at = ? WHERE id = ?",
+            ("youtube", "2026-05-19T08:21:00", "2024-05-19T08:00:00", thread_id),
+        )
+        self._execute(
+            "UPDATE thread_items SET published_at = ? WHERE thread_id = ?",
+            ("2026-04-28T12:00:00", thread_id),
+        )
+
+        summary = self.db.get_dashboard_day_summary(snapshot_date="2026-05-19")
+
+        self.assertEqual(summary["total_articles"], 0)
+        self.assertEqual(summary["all_alerts"], [])
+
     def test_get_dashboard_trend_uses_snapshots_for_past_days_and_live_today(self):
         for date, avg_score in [
             ("2026-05-13", 2.1),
