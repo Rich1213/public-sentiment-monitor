@@ -178,7 +178,7 @@
 
   <div class="grid-2">
     <div class="card">
-      <div class="card-title">7 日情緒趨勢</div>
+      <div class="card-title">7 日負面占比趨勢</div>
       <div style="position:relative; height:180px">
         <canvas id="trend-chart"></canvas>
       </div>
@@ -192,7 +192,7 @@
   </div>
 
   <!-- ── Zone 3: Alert Table ── -->
-  <div class="section-header"><span class="zone-badge">3</span> 高強度負面警報 <span style="font-size:11px; color:#64748b; margin-left:8px">僅顯示今日有新訊號的討論</span></div>
+  <div class="section-header"><span class="zone-badge">3</span> 高強度負面警報 <span style="font-size:11px; color:#64748b; margin-left:8px">顯示今日累積中的高風險負面討論</span></div>
   <div class="card" style="margin-bottom:16px">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
       <div class="filter-tabs" id="brand-tabs">
@@ -380,7 +380,17 @@ function renderTrend(trendData) {
       plugins: { legend: { labels: { color: '#64748b', font: { size: 10 }, boxWidth: 12, padding: 8 } } },
       scales: {
         x: { ticks: { color: '#475569', font: { size: 10 } }, grid: { color: '#1e2235' } },
-        y: { min: 0, max: 5, ticks: { color: '#475569', font: { size: 10 }, stepSize: 1 }, grid: { color: '#1e2235' } }
+        y: {
+          min: 0,
+          max: 100,
+          ticks: {
+            color: '#475569',
+            font: { size: 10 },
+            stepSize: 20,
+            callback: value => `${value}%`
+          },
+          grid: { color: '#1e2235' }
+        }
       }
     }
   });

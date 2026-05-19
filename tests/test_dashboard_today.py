@@ -411,14 +411,14 @@ class DashboardTodayTest(unittest.TestCase):
         self.assertEqual(summary["all_alerts"][0]["channel"], "youtube")
         self.assertEqual(summary["all_alerts"][0]["recent_activity_at"], "2024-05-19T08:00:00")
 
-    def test_get_dashboard_trend_uses_snapshots_for_past_days_and_live_today(self):
-        for date, avg_score in [
-            ("2026-05-13", 2.1),
-            ("2026-05-14", 2.4),
-            ("2026-05-15", 2.8),
-            ("2026-05-16", 3.2),
-            ("2026-05-17", 3.7),
-            ("2026-05-18", 4.1),
+    def test_get_dashboard_trend_uses_negative_ratio_for_past_days_and_live_today(self):
+        for date, article_count, neg_count in [
+            ("2026-05-13", 10, 2),
+            ("2026-05-14", 10, 3),
+            ("2026-05-15", 10, 4),
+            ("2026-05-16", 10, 5),
+            ("2026-05-17", 10, 6),
+            ("2026-05-18", 10, 7),
         ]:
             self._execute(
                 """
@@ -428,7 +428,11 @@ class DashboardTodayTest(unittest.TestCase):
                     channel_breakdown, top_themes, dashboard_summary, payload_json
                 ) VALUES (?, ?, ?, 50, 1, 0, 0, 1, 1, ?, '{}', '[]', 'snapshot', '{}')
                 """,
-                (date, "7-ELEVEN", f"{date}T00:05:00", avg_score),
+                (date, "7-ELEVEN", f"{date}T00:05:00", 0),
+            )
+            self._execute(
+                "UPDATE daily_snapshots SET article_count = ?, neg_count = ? WHERE snapshot_date = ? AND keyword = ?",
+                (article_count, neg_count, date, "7-ELEVEN"),
             )
 
         run_id = self.db.create_run("7-ELEVEN")
@@ -450,8 +454,8 @@ class DashboardTodayTest(unittest.TestCase):
             "2026-05-18",
             "2026-05-19",
         })
-        self.assertEqual(trend["7-ELEVEN"]["2026-05-18"], 4.1)
-        self.assertEqual(trend["7-ELEVEN"]["2026-05-19"], 4.0)
+        self.assertEqual(trend["7-ELEVEN"]["2026-05-18"], 70.0)
+        self.assertEqual(trend["7-ELEVEN"]["2026-05-19"], 100.0)
 
     def test_json_dumps_supports_datetime_payloads(self):
         payload = {"when": datetime(2026, 5, 18, 23, 59, 0)}

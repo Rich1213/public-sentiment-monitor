@@ -1461,7 +1461,7 @@ class SentimentDB:
         try:
             c = conn.cursor()
             sql = f"""
-                SELECT snapshot_date, keyword, avg_score
+                SELECT snapshot_date, keyword, article_count, neg_count
                 FROM daily_snapshots
                 WHERE snapshot_date >= {ph} AND snapshot_date < {ph}
             """
@@ -1478,12 +1478,16 @@ class SentimentDB:
 
         trend: Dict[str, Dict[str, Optional[float]]] = {}
         for row in snapshot_rows:
-            trend.setdefault(row["keyword"], {})[row["snapshot_date"]] = row.get("avg_score")
+            total = int(row.get("article_count") or 0)
+            negative = int(row.get("neg_count") or 0)
+            value = round((negative / total) * 100, 2) if total > 0 else None
+            trend.setdefault(row["keyword"], {})[row["snapshot_date"]] = value
 
         today_summary = self.get_dashboard_day_summary(snapshot_date=today, keywords=keywords)
         for keyword, brand in (today_summary.get("brand_map") or {}).items():
-            scores = [float(score) for score in brand.get("scores", []) if score is not None]
-            trend.setdefault(keyword, {})[today] = round(sum(scores) / len(scores), 2) if scores else None
+            total = int(brand.get("total") or 0)
+            negative = int(brand.get("neg") or 0)
+            trend.setdefault(keyword, {})[today] = round((negative / total) * 100, 2) if total > 0 else None
 
         return trend
 
