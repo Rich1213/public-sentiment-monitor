@@ -4,6 +4,7 @@ import unittest
 import hashlib
 from datetime import datetime
 
+from src.collectors.google_news_collector import GoogleNewsCollector
 from src.utils.db_manager import SentimentDB
 
 
@@ -184,6 +185,78 @@ class DashboardTodayTest(unittest.TestCase):
         analyses = self.db.get_run_analyses(run_id)
         self.assertEqual(len(analyses), 1)
         self.assertEqual(analyses[0]["channel"], "google_news")
+
+    def test_google_news_reprocesses_existing_thread_without_analysis(self):
+        title = "全家便利商店攜手特爾電力"
+        title_key = f"gnews_title:全家:{title}"
+        self.db.save_thread(
+            url=title_key,
+            source_name="Google News",
+            channel="google_news",
+            title=title,
+            board="企業公告",
+            keyword="全家",
+            published_at="2026-05-19T07:09:18",
+        )
+
+        collector = GoogleNewsCollector("全家", db=self.db)
+        collector._fetch_rss_feed = lambda limit=30: [
+            {
+                "title": title,
+                "link": "https://news.google.com/articles/familymart-energy",
+                "published": "2026-05-19T07:09:18",
+                "summary": "全家便利商店與特爾電力合作推動充電服務。",
+                "source": "Google News",
+            }
+        ]
+
+        articles = collector.fetch_latest_posts(limit=5, fresh_mode=False)
+
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0]["storage_key"], title_key)
+
+    def test_google_news_skips_existing_thread_when_analysis_already_exists(self):
+        run_id = self.db.create_run("全家")
+        title = "全家便利商店攜手特爾電力"
+        title_key = f"gnews_title:全家:{title}"
+        thread_id = self.db.save_thread(
+            url=title_key,
+            source_name="Google News",
+            channel="google_news",
+            title=title,
+            board="企業公告",
+            keyword="全家",
+            published_at="2026-05-19T07:09:18",
+        )
+        self.db.save_analysis(
+            thread_id,
+            run_id,
+            {
+                "sentiment": "中立",
+                "score": 1,
+                "theme": "合作消息",
+                "reason": "測試",
+                "voice_source": "Google News",
+                "analyzed_with": "標題",
+                "model_used": "test",
+            },
+            analyzed_content="全家便利商店與特爾電力合作推動充電服務。",
+        )
+
+        collector = GoogleNewsCollector("全家", db=self.db)
+        collector._fetch_rss_feed = lambda limit=30: [
+            {
+                "title": title,
+                "link": "https://news.google.com/articles/familymart-energy",
+                "published": "2026-05-19T07:09:18",
+                "summary": "全家便利商店與特爾電力合作推動充電服務。",
+                "source": "Google News",
+            }
+        ]
+
+        articles = collector.fetch_latest_posts(limit=5, fresh_mode=False)
+
+        self.assertEqual(articles, [])
 
     def test_monitor_batch_roundtrip(self):
         batch_id = self.db.create_monitor_batch(["7-ELEVEN", "全家"])

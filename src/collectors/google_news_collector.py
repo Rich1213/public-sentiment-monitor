@@ -155,14 +155,15 @@ class GoogleNewsCollector:
         print(f"  Fetching Google News for keyword: {self.keyword}（敘事訊號模式）...")
         raw_news = self._fetch_rss_feed(limit * 2)
         title_keys = [f"gnews_title:{self.keyword}:{item['title']}" for item in raw_news]
-        existing_keys = (
-            self.db.get_existing_threads(title_keys)
-            if (not fresh_mode and self.db and title_keys) else set()
+        existing_status = (
+            self.db.get_thread_analysis_status(title_keys)
+            if (not fresh_mode and self.db and title_keys) else {}
         )
 
         articles = []
         narrative_counts: Dict[str, int] = {}
         skipped_dup = 0
+        recovered_orphans = 0
 
         for item, title_key in zip(raw_news, title_keys):
             if len(articles) >= limit:
@@ -177,9 +178,13 @@ class GoogleNewsCollector:
                 continue
 
             # 去重（Google News redirect URL 每次不同，改用標題去重）
-            if title_key in existing_keys:
+            # 但若舊資料只有 thread、沒有 analysis，代表曾經部分寫入失敗，這次要補跑。
+            status = existing_status.get(title_key, {})
+            if status.get("has_analysis"):
                 skipped_dup += 1
                 continue
+            if status.get("thread_exists") and not status.get("has_analysis"):
+                recovered_orphans += 1
 
             # 敘事類型分類
             narrative_type = classify_narrative(item["title"], item["summary"])
@@ -234,6 +239,8 @@ class GoogleNewsCollector:
             print(f"  [Google News] 敘事分布：{dist}")
         if skipped_dup > 0:
             print(f"  [Google News] 跳過已採集：{skipped_dup} 篇（用 --fresh 強制重採）")
+        if recovered_orphans > 0:
+            print(f"  [Google News] 補救舊 orphan threads：{recovered_orphans} 篇")
 
         print(f"  → Google News: {len(articles)} 篇完成\n")
         return articles

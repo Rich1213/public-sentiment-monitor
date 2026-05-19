@@ -1483,6 +1483,54 @@ class SentimentDB:
         finally:
             conn.close()
 
+    def get_thread_analysis_status(self, urls: List[str]) -> Dict[str, Dict[str, bool]]:
+        """
+        批次查詢 thread 是否存在，以及是否已有至少一筆文章級分析。
+
+        回傳格式：
+          {
+            original_url_or_key: {
+              "thread_exists": bool,
+              "has_analysis": bool,
+            }
+          }
+        """
+        if not urls:
+            return {}
+
+        url_to_id = {url: hashlib.md5(url.encode()).hexdigest() for url in urls}
+        ids = list(url_to_id.values())
+        ph = self._ph()
+        placeholders = ",".join([ph] * len(ids))
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"""SELECT t.id,
+                           CASE WHEN COUNT(a.id) > 0 THEN 1 ELSE 0 END AS has_analysis
+                    FROM threads t
+                    LEFT JOIN analyses a ON a.thread_id = t.id
+                    WHERE t.id IN ({placeholders})
+                    GROUP BY t.id""",
+                tuple(ids),
+            )
+            status_by_id = {}
+            for row in self._adapter.fetchall_dict(c):
+                thread_id = row["id"]
+                status_by_id[thread_id] = {
+                    "thread_exists": True,
+                    "has_analysis": bool(row["has_analysis"]),
+                }
+            return {
+                url: status_by_id.get(
+                    thread_id,
+                    {"thread_exists": False, "has_analysis": False},
+                )
+                for url, thread_id in url_to_id.items()
+            }
+        finally:
+            conn.close()
+
     # ── 存入討論串（Layer 2）─────────────────────────────────
     def save_thread(
         self,
