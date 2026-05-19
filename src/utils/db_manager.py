@@ -1270,8 +1270,19 @@ class SentimentDB:
             if channel in channel_counts:
                 channel_counts[channel] += 1
 
-            if thread_id in active_threads and row.get("sentiment") == "負面" and row.get("score", 0) >= 3:
+            if row.get("sentiment") == "負面" and row.get("score", 0) >= 3:
                 thread_ctx = active_threads.get(thread_id, {})
+                first_seen_at = thread_ctx.get("first_seen_at") or row.get("first_seen_at") or row.get("published_at") or ""
+                recent_activity_at = thread_ctx.get("recent_activity_at") or row.get("published_at") or first_seen_at or ""
+                ongoing_days = (
+                    thread_ctx.get("ongoing_days")
+                    if thread_id in active_threads
+                    else (
+                        self._days_since(first_seen_at, snapshot_date)
+                        if first_seen_at and str(first_seen_at)[:10] < snapshot_date
+                        else 0
+                    )
+                )
                 alert = {
                     "brand": kw,
                     "channel": row.get("channel") or "",
@@ -1280,9 +1291,9 @@ class SentimentDB:
                     "score": row.get("score") or 0,
                     "theme": row.get("theme") or "—",
                     "published": row.get("published_at") or "",
-                    "recent_activity_at": thread_ctx.get("recent_activity_at") or "",
-                    "first_seen_at": thread_ctx.get("first_seen_at") or "",
-                    "ongoing_days": thread_ctx.get("ongoing_days") or 0,
+                    "recent_activity_at": recent_activity_at,
+                    "first_seen_at": first_seen_at,
+                    "ongoing_days": ongoing_days,
                     "thread_id": thread_id,
                 }
                 brand["alerts"].append(alert)

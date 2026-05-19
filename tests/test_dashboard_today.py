@@ -339,8 +339,10 @@ class DashboardTodayTest(unittest.TestCase):
 
         self.assertEqual(summary["total_articles"], 1)
         self.assertEqual(summary["channel_counts"]["youtube"], 1)
-        self.assertEqual(summary["all_alerts"], [])
         self.assertIn("7-ELEVEN", summary["brand_map"])
+        self.assertEqual(len(summary["all_alerts"]), 1)
+        self.assertEqual(summary["all_alerts"][0]["title"], "三月舊文")
+        self.assertEqual(summary["all_alerts"][0]["recent_activity_at"], "2026-03-01T09:00:00")
 
     def test_dashboard_day_summary_includes_old_thread_with_today_comment_activity(self):
         run_id = self.db.create_run("7-ELEVEN")
@@ -405,7 +407,9 @@ class DashboardTodayTest(unittest.TestCase):
 
         self.assertEqual(summary["total_articles"], 1)
         self.assertEqual(summary["channel_counts"]["youtube"], 1)
-        self.assertEqual(summary["all_alerts"], [])
+        self.assertEqual(len(summary["all_alerts"]), 1)
+        self.assertEqual(summary["all_alerts"][0]["channel"], "youtube")
+        self.assertEqual(summary["all_alerts"][0]["recent_activity_at"], "2024-05-19T08:00:00")
 
     def test_get_dashboard_trend_uses_snapshots_for_past_days_and_live_today(self):
         for date, avg_score in [
