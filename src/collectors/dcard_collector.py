@@ -48,18 +48,9 @@ except ImportError:
     print("⚠️  [Dcard] curl_cffi 未安裝，將使用標準 requests。"
           "建議執行：pip install curl_cffi")
 
-# ── WAF 繞過模式（讀 .env）──────────────────────────────────────
-_PROXY_URL      = os.getenv("DCARD_PROXY_URL", "").strip()
-_SCRAPERAPI_KEY = os.getenv("SCRAPERAPI_KEY", "").strip()
-
-if _SCRAPERAPI_KEY:
-    _BYPASS_MODE = "scraperapi"
-    print(f"  [Dcard] 使用 ScraperAPI 模式（雲端 WAF 繞過）")
-elif _PROXY_URL:
-    _BYPASS_MODE = "proxy"
-    print(f"  [Dcard] 使用 Residential Proxy 模式（{_PROXY_URL.split('@')[-1]}）")
-else:
-    _BYPASS_MODE = "direct"
+# ── 注意：WAF 繞過設定改在 DcardCollector.__init__ 讀取 ──────────
+# 不再於模組頂層讀取 os.getenv，確保 load_dotenv() 在 import 之前
+# 執行的所有入口點（CLI / API / Cron）都能正確取得 .env 設定值。
 
 DCARD_SEARCH_URL    = "https://www.dcard.tw/search/posts"
 SCRAPERAPI_ENDPOINT = "https://api.scraperapi.com/"
@@ -110,6 +101,22 @@ class DcardCollector:
     def __init__(self, keyword: str, db: Optional[SentimentDB] = None):
         self.keyword      = keyword
         self.db           = db
+
+        # ── WAF 繞過設定（在 instance 初始化時讀取，確保 load_dotenv 已執行）─
+        self._scraperapi_key = os.getenv("SCRAPERAPI_KEY", "").strip()
+        self._proxy_url      = os.getenv("DCARD_PROXY_URL", "").strip()
+        # Dcard 在雲端環境對資料中心 IP 極敏感，Residential Proxy 優先級高於 ScraperAPI。
+        # 若兩者同時存在，優先走 residential proxy，避免 ScraperAPI 額度用完時整條線失效。
+        if self._proxy_url:
+            self._bypass_mode = "proxy"
+            host_port = self._proxy_url.split("@")[-1] if "@" in self._proxy_url else self._proxy_url
+            print(f"  [Dcard] 使用 Residential Proxy 模式（{host_port}）")
+        elif self._scraperapi_key:
+            self._bypass_mode = "scraperapi"
+            print("  [Dcard] 使用 ScraperAPI 模式（雲端 WAF 繞過）")
+        else:
+            self._bypass_mode = "direct"
+
         self.search_query = get_search_query(keyword, "dcard")
         self.search_terms = [t.strip() for t in self.search_query.split(" OR ") if t.strip()]
         self.session      = self._init_session()
@@ -123,19 +130,19 @@ class DcardCollector:
         session.headers.update(BROWSER_HEADERS)
 
         # Residential proxy：設定到 session
-        if _BYPASS_MODE == "proxy":
+        if self._bypass_mode == "proxy":
             session.proxies = {
-                "http":  _PROXY_URL,
-                "https": _PROXY_URL,
+                "http":  self._proxy_url,
+                "https": self._proxy_url,
             }
 
         # ScraperAPI 模式不需要暖機（直接走 API endpoint）
-        if _BYPASS_MODE != "scraperapi":
+        if self._bypass_mode != "scraperapi":
             try:
                 session.get("https://www.dcard.tw/", timeout=15)
                 time.sleep(random.uniform(1.0, 2.0))
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"  [Dcard] 暖機請求失敗（非致命，繼續）：{e}")
         return session
 
     def _get(self, url: str, params: dict = None, headers: dict = None,
@@ -147,7 +154,7 @@ class DcardCollector:
           - direct：直連
         force_direct=True 時強制直連（JSON API endpoint 適用）
         """
-        if _BYPASS_MODE == "scraperapi" and not force_direct:
+        if self._bypass_mode == "scraperapi" and not force_direct:
             # ScraperAPI 把目標 URL 當參數傳入
             target = url
             if params:
@@ -171,7 +178,7 @@ class DcardCollector:
         import requests as _req
         return _req.get(
             SCRAPERAPI_ENDPOINT,
-            params={"api_key": _SCRAPERAPI_KEY, "url": target_url, "render": "false"},
+            params={"api_key": self._scraperapi_key, "url": target_url, "render": "false"},
             timeout=timeout,
         )
 
@@ -296,7 +303,7 @@ class DcardCollector:
         直連會被 Cloudflare 403，固定走 ScraperAPI（若無 key 則回傳空）。
         回傳：{ content, like_count, comment_count, forum, title, date_str }
         """
-        if not _SCRAPERAPI_KEY:
+        if not self._scraperapi_key:
             return {}
         api_url = f"https://www.dcard.tw/service/api/v2/posts/{post_id}"
         try:
@@ -350,7 +357,7 @@ class DcardCollector:
         api_url = f"https://www.dcard.tw/service/api/v2/forums/{forum_id}/pinnedPosts"
         try:
             self._delay()
-            if _SCRAPERAPI_KEY:
+            if self._scraperapi_key:
                 resp = self._scraperapi_get_with_fallback(api_url)
             else:
                 resp = self.session.get(api_url, timeout=20)
@@ -402,7 +409,7 @@ class DcardCollector:
         api_url = f"https://www.dcard.tw/service/api/v2/forums/{forum_id}/posts"
         try:
             self._delay()
-            if _SCRAPERAPI_KEY:
+            if self._scraperapi_key:
                 resp = self._scraperapi_get_with_fallback(api_url + f"?limit={limit}", timeout=60)
             else:
                 resp = self.session.get(api_url, params={"limit": limit}, timeout=20)
