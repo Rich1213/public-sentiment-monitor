@@ -161,10 +161,22 @@ class DcardCollector:
                 target += ("&" if "?" in target else "?") + urllib.parse.urlencode(params)
             # 不能走 curl_cffi session 打 ScraperAPI，否則會被 403。
             return self._scraperapi_get_with_fallback(target, timeout=60)
-        else:
-            return self.session.get(
-                url, params=params, headers=headers, timeout=timeout
-            )
+
+        resp = self.session.get(
+            url, params=params, headers=headers, timeout=timeout
+        )
+        if (
+            self._bypass_mode == "proxy"
+            and not force_direct
+            and resp.status_code == 403
+            and self._scraperapi_key
+        ):
+            target = url
+            if params:
+                target += ("&" if "?" in target else "?") + urllib.parse.urlencode(params)
+            print("  [Dcard] Residential proxy 403，改用 ScraperAPI 備援...")
+            return self._scraperapi_get_with_fallback(target, timeout=60)
+        return resp
 
     def _delay(self):
         time.sleep(random.uniform(*REQUEST_DELAY))
@@ -303,12 +315,10 @@ class DcardCollector:
         直連會被 Cloudflare 403，固定走 ScraperAPI（若無 key 則回傳空）。
         回傳：{ content, like_count, comment_count, forum, title, date_str }
         """
-        if not self._scraperapi_key:
-            return {}
         api_url = f"https://www.dcard.tw/service/api/v2/posts/{post_id}"
         try:
             self._delay()
-            resp = self._scraperapi_get_with_fallback(api_url)
+            resp = self._get(api_url, timeout=60)
             if resp.status_code != 200:
                 return {}
             d = resp.json()
@@ -357,10 +367,7 @@ class DcardCollector:
         api_url = f"https://www.dcard.tw/service/api/v2/forums/{forum_id}/pinnedPosts"
         try:
             self._delay()
-            if self._scraperapi_key:
-                resp = self._scraperapi_get_with_fallback(api_url)
-            else:
-                resp = self.session.get(api_url, timeout=20)
+            resp = self._get(api_url, timeout=60)
 
             if resp.status_code != 200:
                 print(f"  [Dcard/pinned/{forum_id}] {resp.status_code}")
@@ -409,10 +416,7 @@ class DcardCollector:
         api_url = f"https://www.dcard.tw/service/api/v2/forums/{forum_id}/posts"
         try:
             self._delay()
-            if self._scraperapi_key:
-                resp = self._scraperapi_get_with_fallback(api_url + f"?limit={limit}", timeout=60)
-            else:
-                resp = self.session.get(api_url, params={"limit": limit}, timeout=20)
+            resp = self._get(api_url, params={"limit": limit}, timeout=60)
 
             if resp.status_code != 200:
                 print(f"  [Dcard/forum/{forum_id}] API {resp.status_code}")
