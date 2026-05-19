@@ -195,6 +195,7 @@ class GoogleNewsCollector:
             article = {
                 "title":          item["title"],
                 "link":           item["link"],
+                "storage_key":    title_key,
                 "source":         item["source"],
                 "published":      item["published"],
                 "content":        content,

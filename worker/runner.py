@@ -156,7 +156,8 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
             analyses.append(analysis)
 
             # 寫入 DB
-            thread_id = hashlib.md5(article["link"].encode()).hexdigest()
+            storage_key = article.get("storage_key") or article["link"]
+            thread_id = hashlib.md5(storage_key.encode()).hexdigest()
             try:
                 db.save_analysis(
                     thread_id, run_id, analysis,

@@ -1733,7 +1733,7 @@ class SentimentDB:
             board = src_field.split("/", 1)[1]
 
         thread_id = self.save_thread(
-            url=article["link"],
+            url=article.get("storage_key") or article["link"],
             source_name=source_name,
             channel=channel,
             title=article["title"],

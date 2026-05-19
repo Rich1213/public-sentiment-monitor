@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+import hashlib
 from datetime import datetime
 
 from src.utils.db_manager import SentimentDB
@@ -99,6 +100,90 @@ class DashboardTodayTest(unittest.TestCase):
             self._query_value("SELECT first_seen_at FROM threads WHERE id = ?", (thread_id,)),
             "2026-05-01T08:00:00",
         )
+
+    def test_save_article_keeps_google_news_thread_and_analysis_on_same_record(self):
+        run_id = self.db.create_run("超商食安")
+        title = "超商繳費不蓋章了"
+        title_key = f"gnews_title:超商食安:{title}"
+        saved_thread_id = self.db.save_thread(
+            url=title_key,
+            source_name="Google News",
+            channel="google_news",
+            title=title,
+            board="brand_signal",
+            keyword="超商食安",
+            published_at="2026-05-19T06:30:21",
+        )
+
+        self.db.save_article(
+            {
+                "title": title,
+                "link": "https://news.google.com/articles/example-redirect",
+                "source": "Google News",
+                "published": "2026-05-19T06:30:21",
+                "content": "超商繳費不蓋章引發討論",
+                "channel": "google_news",
+                "keyword": "超商食安",
+                "narrative_type": "brand_signal",
+                "storage_key": title_key,
+            },
+            {
+                "sentiment": "負面",
+                "score": 3,
+                "theme": "服務流程變動",
+                "reason": "測試",
+                "voice_source": "Google News",
+                "analyzed_with": "標題",
+                "model_used": "test",
+            },
+            run_id=run_id,
+        )
+        self.db.close_run(run_id, articles_found=1, articles_new=1)
+
+        analyses = self.db.get_run_analyses(run_id)
+        self.assertEqual(len(analyses), 1)
+        self.assertEqual(analyses[0]["title"], title)
+        self.assertEqual(
+            self._query_value("SELECT COUNT(*) FROM threads WHERE id = ?", (saved_thread_id,)),
+            1,
+        )
+
+    def test_google_news_storage_key_matches_worker_analysis_thread_id(self):
+        run_id = self.db.create_run("超商食安")
+        title = "超商繳費不蓋章了"
+        title_key = f"gnews_title:超商食安:{title}"
+        saved_thread_id = self.db.save_thread(
+            url=title_key,
+            source_name="Google News",
+            channel="google_news",
+            title=title,
+            board="brand_signal",
+            keyword="超商食安",
+            published_at="2026-05-19T06:30:21",
+        )
+
+        worker_thread_id = hashlib.md5(title_key.encode()).hexdigest()
+        self.assertEqual(saved_thread_id, worker_thread_id)
+
+        self.db.save_analysis(
+            worker_thread_id,
+            run_id,
+            {
+                "sentiment": "負面",
+                "score": 3,
+                "theme": "服務流程變動",
+                "reason": "測試",
+                "voice_source": "Google News",
+                "analyzed_with": "標題",
+                "model_used": "test",
+            },
+            analyzed_content="超商繳費不蓋章引發討論",
+        )
+        self.db.close_run(run_id, articles_found=1, articles_new=1)
+
+        analyses = self.db.get_run_analyses(run_id)
+        self.assertEqual(len(analyses), 1)
+        self.assertEqual(analyses[0]["channel"], "google_news")
 
     def test_monitor_batch_roundtrip(self):
         batch_id = self.db.create_monitor_batch(["7-ELEVEN", "全家"])
