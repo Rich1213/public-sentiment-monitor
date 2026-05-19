@@ -1,0 +1,7 @@
+[build]
+builder = "RAILPACK"
+
+[deploy]
+startCommand = "python3 scripts/capture_daily_snapshot.py"
+restartPolicyType = "NEVER"
+cronSchedule = "5 16 * * *"
