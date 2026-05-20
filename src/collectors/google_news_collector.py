@@ -27,6 +27,7 @@ import feedparser
 import urllib.parse
 import re
 from typing import List, Dict, Optional
+import requests
 
 from src.utils.db_manager import SentimentDB
 from src.config.brands import get_search_query, is_relevant_with_two_stage_attribution
@@ -75,8 +76,8 @@ class GoogleNewsCollector:
     def _fetch_rss_feed(self, limit: int = 30) -> List[Dict]:
         """透過 Google News RSS 獲取新聞列表。
 
-        優先使用 ScraperAPI 代理（繞過雲端機房 IP 封鎖）；
-        無 API key 時降級為直連。
+        低成本優先：先直連 Google News RSS；
+        只有直連失敗時，才在有設定 API key 的情況下使用 ScraperAPI 備援。
         """
         encoded = urllib.parse.quote(self.search_query)
         rss_url = (
@@ -84,23 +85,11 @@ class GoogleNewsCollector:
             f"?q={encoded}&hl=zh-TW&gl=TW&ceid=TW:zh-Hant"
         )
 
-        scraper_key = os.getenv("SCRAPERAPI_KEY", "")
+        scraper_key = os.getenv("SCRAPERAPI_KEY", "").strip()
 
         try:
-            if scraper_key:
-                # ScraperAPI 代理：用 requests params 傳遞，避免雙重編碼
-                import requests as _req
-                print(f"  [Google News] 使用 ScraperAPI 代理採集...")
-                resp = _req.get(
-                    "https://api.scraperapi.com",
-                    params={"api_key": scraper_key, "url": rss_url},
-                    timeout=30
-                )
-                resp.raise_for_status()
-                feed = feedparser.parse(resp.text)
-            else:
-                print(f"  [Google News] 直連採集（無 ScraperAPI）...")
-                feed = feedparser.parse(rss_url)
+            print("  [Google News] 直連採集（免費優先）...")
+            feed = feedparser.parse(rss_url)
 
             print(f"  [Google News] RSS 回傳 {len(feed.entries)} 筆")
             results = []
@@ -118,9 +107,19 @@ class GoogleNewsCollector:
             return results
         except Exception as e:
             print(f"  [Google News] RSS 獲取失敗：{e}")
+            if not scraper_key:
+                print("  [Google News] 未設定 ScraperAPI，停止於直連失敗。")
+                return []
+
             try:
-                print("  [Google News] 改用直連 RSS fallback...")
-                feed = feedparser.parse(rss_url)
+                print("  [Google News] 改用 ScraperAPI fallback...")
+                resp = requests.get(
+                    "https://api.scraperapi.com",
+                    params={"api_key": scraper_key, "url": rss_url},
+                    timeout=30,
+                )
+                resp.raise_for_status()
+                feed = feedparser.parse(resp.text)
                 results = []
                 for entry in feed.entries[:limit]:
                     summary = clean_summary(
