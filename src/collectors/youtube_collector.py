@@ -29,6 +29,7 @@ from src.config.brands import get_search_terms, is_relevant_with_two_stage_attri
 YOUTUBE_API_BASE = "https://www.googleapis.com/youtube/v3"
 VIEWS_THRESHOLD  = int(os.getenv("YOUTUBE_VIEWS_THRESHOLD", "10000"))
 RECENT_HOURS     = int(os.getenv("YOUTUBE_RECENT_HOURS", "48"))
+POPULAR_MAX_AGE_HOURS = int(os.getenv("YOUTUBE_POPULAR_MAX_AGE_HOURS", "168"))
 COMMENTS_PER_VIDEO = int(os.getenv("YOUTUBE_COMMENTS_PER_VIDEO", "30"))
 ANALYZED_COMMENTS_PER_VIDEO = int(os.getenv("YOUTUBE_ANALYZED_COMMENTS_PER_VIDEO", "15"))
 COMMENT_MIN_LIKES = int(os.getenv("YOUTUBE_COMMENT_MIN_LIKES", "3"))
@@ -128,6 +129,9 @@ class YouTubeCollector:
 
         return merged[:max_results]
 
+    def _current_time(self) -> datetime:
+        return datetime.now(timezone.utc)
+
     # ── 批次查詢影片詳情（觀看數）───────────────────────────────
 
     def _get_video_stats(self, video_ids: List[str]) -> Dict[str, int]:
@@ -221,8 +225,9 @@ class YouTubeCollector:
         stats_map = self._get_video_stats(video_ids)
 
         # 3. 過濾：觀看數 OR 新發布
-        now_utc    = datetime.now(timezone.utc)
+        now_utc    = self._current_time()
         cutoff     = now_utc - timedelta(hours=RECENT_HOURS)
+        popular_cutoff = now_utc - timedelta(hours=POPULAR_MAX_AGE_HOURS)
         qualified  = []
 
         for v in raw_videos:
@@ -235,10 +240,12 @@ class YouTubeCollector:
 
             is_popular = view_count >= VIEWS_THRESHOLD
             is_recent  = pub_dt >= cutoff
+            is_popular_and_fresh_enough = is_popular and pub_dt >= popular_cutoff
 
-            if is_popular or is_recent:
+            if is_recent or is_popular_and_fresh_enough:
                 reason = []
-                if is_popular: reason.append(f"觀看數 {view_count:,}")
+                if is_popular_and_fresh_enough:
+                    reason.append(f"觀看數 {view_count:,}")
                 if is_recent:  reason.append(f"新發布 {pub_dt.strftime('%m/%d %H:%M')}")
                 v["view_count"] = view_count
                 v["reason"]     = "、".join(reason)

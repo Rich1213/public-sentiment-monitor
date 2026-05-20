@@ -1,13 +1,39 @@
 import os
+import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import datetime
+from pathlib import Path
 
 from src.jobs.daily_snapshot_job import resolve_snapshot_date, run_daily_snapshot_capture
 from src.utils.db_manager import SentimentDB
 
 
 class DailySnapshotJobTest(unittest.TestCase):
+    def test_capture_script_runs_from_repo_root(self):
+        repo_root = Path(__file__).resolve().parents[1]
+        fd, path = tempfile.mkstemp(suffix=".db")
+        os.close(fd)
+        try:
+            env = os.environ.copy()
+            env["SQLITE_PATH"] = path
+            env["MONITOR_KEYWORDS"] = "7-ELEVEN"
+
+            result = subprocess.run(
+                [sys.executable, str(repo_root / "scripts" / "capture_daily_snapshot.py")],
+                cwd=repo_root,
+                env=env,
+                capture_output=True,
+                text=True,
+            )
+
+            self.assertEqual(result.returncode, 0, msg=result.stderr or result.stdout)
+            self.assertIn("[daily_snapshot_job] snapshot_date=", result.stdout)
+        finally:
+            if os.path.exists(path):
+                os.remove(path)
+
     def test_resolve_snapshot_date_uses_taipei_yesterday_for_utc_cron_runtime(self):
         snapshot_date = resolve_snapshot_date(
             now=datetime.fromisoformat("2026-05-19T16:05:00+00:00"),

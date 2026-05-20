@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 
 from src.collectors.youtube_collector import YouTubeCollector
 from src.utils.db_manager import SentimentDB
@@ -12,6 +13,10 @@ class StubYouTubeCollector(YouTubeCollector):
         self.db = db
         self.api_key = "test-key"
         self.search_terms = ["7-11"]
+        self._fixed_now = datetime(2026, 5, 20, 9, 0, tzinfo=timezone.utc)
+
+    def _current_time(self):
+        return self._fixed_now
 
     def _search_videos(self, max_results=20):
         return [
@@ -47,7 +52,56 @@ class StubYouTubeCollector(YouTubeCollector):
         ]
 
 
+class OldPopularVideoCollector(StubYouTubeCollector):
+    def _search_videos(self, max_results=20):
+        return [
+            {
+                "video_id": "legacy-video",
+                "title": "7-11 兩年前超商熱門舊片",
+                "channel": "OldChannel",
+                "published": "2024-05-18T10:00:00Z",
+                "description": "舊片描述",
+                "matched_term": "7-11",
+            }
+        ]
+
+    def _get_video_stats(self, video_ids):
+        return {"legacy-video": 250000}
+
+
+class RecentLowViewCollector(StubYouTubeCollector):
+    def _search_videos(self, max_results=20):
+        return [
+            {
+                "video_id": "fresh-video",
+                "title": "7-11 今天的新品短片",
+                "channel": "FreshChannel",
+                "published": "2026-05-20T07:30:00Z",
+                "description": "剛上架的新片",
+                "matched_term": "7-11",
+            }
+        ]
+
+    def _get_video_stats(self, video_ids):
+        return {"fresh-video": 120}
+
+
 class YouTubeCommentStorageTest(unittest.TestCase):
+    def test_old_popular_video_is_not_collected(self):
+        collector = OldPopularVideoCollector("7-ELEVEN")
+
+        articles = collector.fetch_latest_posts(limit=5, fresh_mode=False)
+
+        self.assertEqual(articles, [])
+
+    def test_recent_low_view_video_is_still_collected(self):
+        collector = RecentLowViewCollector("7-ELEVEN")
+
+        articles = collector.fetch_latest_posts(limit=5, fresh_mode=False)
+
+        self.assertEqual(len(articles), 1)
+        self.assertEqual(articles[0]["link"], "https://www.youtube.com/watch?v=fresh-video")
+
     def test_select_comments_for_analysis_prefers_high_value_comments(self):
         collector = StubYouTubeCollector("7-ELEVEN")
         comments = [
