@@ -42,6 +42,11 @@
   .kpi-note { font-size: 11px; margin-top: 8px; font-weight: 600; }
   .section-header { font-size: 13px; font-weight: 600; color: #94a3b8; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
   .zone-badge { width: 20px; height: 20px; border-radius: 50%; background: #252840; border: 1px solid #3d4268; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; color: #7c3aed; }
+  .help-tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 999px; border: 1px solid #3d4268; background: #1e2235; color: #64748b; font-size: 10px; font-weight: 700; line-height: 1; cursor: help; flex-shrink: 0; }
+  .help-tip:hover { color: #cbd5e1; border-color: #64748b; }
+  .help-tip::after { content: attr(data-tip); position: absolute; top: calc(100% + 8px); right: 0; width: 220px; padding: 8px 10px; border-radius: 8px; background: #0f172a; border: 1px solid #334155; color: #cbd5e1; font-size: 11px; font-weight: 500; letter-spacing: 0; line-height: 1.5; text-transform: none; white-space: normal; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity 0.15s ease, transform 0.15s ease; z-index: 20; }
+  .help-tip:hover::after { opacity: 1; transform: translateY(0); }
+  .help-tip-right { margin-left: auto; }
 
   .risk-low { color: #86efac; }
   .risk-medium { color: #fcd34d; }
@@ -138,7 +143,6 @@
     <div class="topbar-right">
       <span class="status-text"><span class="status-dot" id="status-dot"></span><span id="status-label">連線中...</span></span>
       <span class="last-update" id="last-update">—</span>
-      <button class="btn btn-ghost" id="refresh-btn" onclick="loadData()">↺ 重新整理</button>
       <button class="btn btn-primary" id="run-btn" onclick="triggerMonitor()">↻ 更新輿情資料</button>
     </div>
   </div>
@@ -164,8 +168,8 @@
   <!-- ── Zone 1: KPI Bar ── -->
   <div style="margin-bottom:6px" class="section-header"><span class="zone-badge">1</span> 今日概況</div>
   <div class="grid-4" id="kpi-grid">
-    <div class="card"><div class="card-title">公關風險警報</div><div class="kpi-val" id="kpi-alerts">—</div><div class="kpi-sub" id="kpi-alert-sub">主品牌綜合風險分數</div><div class="kpi-note" id="kpi-alert-note">—</div></div>
-    <div class="card"><div class="card-title">今日論述</div><div class="narrative-text" id="kpi-narrative">—</div></div>
+    <div class="card"><div class="card-title">公關風險警報 <span class="help-tip help-tip-right" data-tip="綜合主品牌負面強度、負面數量與高風險事件後的分數。分數越高，越需要優先處理。">?</span></div><div class="kpi-val" id="kpi-alerts">—</div><div class="kpi-sub" id="kpi-alert-sub">主品牌綜合風險分數</div><div class="kpi-note" id="kpi-alert-note">—</div></div>
+    <div class="card"><div class="card-title">今日論述 <span class="help-tip help-tip-right" data-tip="AI 根據今日主要負面訊號整理出的重點摘要，用來快速判斷現在最值得關注的事件。">?</span></div><div class="narrative-text" id="kpi-narrative">—</div></div>
     <div class="card"><div class="card-title">分析文章數</div><div class="kpi-val" id="kpi-articles">—</div><div class="kpi-sub">今日累積</div></div>
     <div class="card"><div class="card-title">主目標品牌</div><div class="kpi-val" style="font-size:18px; margin-top:4px" id="kpi-brand">7-ELEVEN</div><div class="kpi-sub" id="kpi-sentiment-avg">平均情緒強度 —</div></div>
   </div>
@@ -178,7 +182,7 @@
 
   <div class="grid-2">
     <div class="card">
-      <div class="card-title">7 日負面占比趨勢</div>
+      <div class="card-title">7 日負面占比趨勢 <span class="help-tip help-tip-right" data-tip="各品牌每日負面文章占當日總文章數的比例，用來看負面情緒是否正在升高或擴散。">?</span></div>
       <div style="position:relative; height:180px">
         <canvas id="trend-chart"></canvas>
       </div>
@@ -192,7 +196,7 @@
   </div>
 
   <!-- ── Zone 3: Alert Table ── -->
-  <div class="section-header"><span class="zone-badge">3</span> 高強度負面警報 <span style="font-size:11px; color:#64748b; margin-left:8px">顯示今日累積中的高風險負面討論</span></div>
+  <div class="section-header"><span class="zone-badge">3</span> 高強度負面警報 <span class="help-tip" data-tip="顯示今天累積中分數較高、需要優先關注的負面討論，包含品牌、渠道、主題與最近活動時間。">?</span></div>
   <div class="card" style="margin-bottom:16px">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px">
       <div class="filter-tabs" id="brand-tabs">
@@ -554,10 +558,8 @@ async function restoreMonitorProgress() {
 
 async function triggerMonitor() {
   const btn = document.getElementById('run-btn');
-  const refreshBtn = document.getElementById('refresh-btn');
   btn.disabled = true;
   btn.textContent = '更新中...';
-  refreshBtn.disabled = true;
 
   try {
     const res = await fetch(`${API}/runs/monitor`, {
@@ -583,7 +585,6 @@ async function triggerMonitor() {
   } catch (e) {
     btn.disabled = false;
     btn.textContent = '↻ 更新輿情資料';
-    refreshBtn.disabled = false;
     await loadData();
     alert('觸發失敗：' + e.message);
   }
