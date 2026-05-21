@@ -2,6 +2,7 @@ import os
 import tempfile
 import unittest
 import hashlib
+import urllib.parse
 from datetime import datetime, timedelta
 from unittest.mock import patch
 
@@ -107,12 +108,14 @@ class DashboardTodayTest(unittest.TestCase):
         run_id = self.db.create_run("超商食安")
         title = "超商繳費不蓋章了"
         title_key = f"gnews_title:超商食安:{title}"
+        article_link = "https://news.google.com/articles/example-redirect"
         saved_thread_id = self.db.save_thread(
-            url=title_key,
+            url=article_link,
             source_name="Google News",
             channel="google_news",
             title=title,
             board="brand_signal",
+            thread_key=title_key,
             keyword="超商食安",
             published_at="2026-05-19T06:30:21",
         )
@@ -120,7 +123,7 @@ class DashboardTodayTest(unittest.TestCase):
         self.db.save_article(
             {
                 "title": title,
-                "link": "https://news.google.com/articles/example-redirect",
+                "link": article_link,
                 "source": "Google News",
                 "published": "2026-05-19T06:30:21",
                 "content": "超商繳費不蓋章引發討論",
@@ -148,6 +151,10 @@ class DashboardTodayTest(unittest.TestCase):
         self.assertEqual(
             self._query_value("SELECT COUNT(*) FROM threads WHERE id = ?", (saved_thread_id,)),
             1,
+        )
+        self.assertEqual(
+            self._query_value("SELECT url FROM threads WHERE id = ?", (saved_thread_id,)),
+            article_link,
         )
 
     def test_google_news_storage_key_matches_worker_analysis_thread_id(self):
@@ -186,6 +193,78 @@ class DashboardTodayTest(unittest.TestCase):
         analyses = self.db.get_run_analyses(run_id)
         self.assertEqual(len(analyses), 1)
         self.assertEqual(analyses[0]["channel"], "google_news")
+
+    def test_dashboard_summary_uses_real_google_news_link_for_new_records(self):
+        run_id = self.db.create_run("超商食安")
+        title = "超商雞胸肉又出事"
+        title_key = f"gnews_title:超商食安:{title}"
+        article_link = "https://news.google.com/articles/example-google-news-link"
+        thread_id = self.db.save_thread(
+            url=article_link,
+            source_name="Google News",
+            channel="google_news",
+            title=title,
+            board="brand_signal",
+            thread_key=title_key,
+            keyword="超商食安",
+            published_at="2026-05-19T06:30:21",
+        )
+        self.db.save_analysis(
+            thread_id,
+            run_id,
+            {
+                "sentiment": "負面",
+                "score": 4,
+                "theme": "食安疑慮",
+                "reason": "測試",
+                "voice_source": "Google News",
+                "analyzed_with": "標題",
+                "model_used": "test",
+            },
+            analyzed_content="超商雞胸肉又出事",
+        )
+        self.db.close_run(run_id, articles_found=1, articles_new=1)
+
+        summary = self.db.get_dashboard_day_summary()
+
+        self.assertEqual(summary["all_alerts"][0]["url"], article_link)
+
+    def test_dashboard_summary_falls_back_for_legacy_google_news_storage_key_urls(self):
+        run_id = self.db.create_run("超商食安")
+        title = "超商雞胸肉又出事"
+        title_key = f"gnews_title:超商食安:{title}"
+        thread_id = self.db.save_thread(
+            url=title_key,
+            source_name="Google News",
+            channel="google_news",
+            title=title,
+            board="brand_signal",
+            keyword="超商食安",
+            published_at="2026-05-19T06:30:21",
+        )
+        self.db.save_analysis(
+            thread_id,
+            run_id,
+            {
+                "sentiment": "負面",
+                "score": 4,
+                "theme": "食安疑慮",
+                "reason": "測試",
+                "voice_source": "Google News",
+                "analyzed_with": "標題",
+                "model_used": "test",
+            },
+            analyzed_content="超商雞胸肉又出事",
+        )
+        self.db.close_run(run_id, articles_found=1, articles_new=1)
+
+        summary = self.db.get_dashboard_day_summary()
+        expected_url = (
+            "https://news.google.com/search"
+            f"?q={urllib.parse.quote(title)}&hl=zh-TW&gl=TW&ceid=TW%3Azh-Hant"
+        )
+
+        self.assertEqual(summary["all_alerts"][0]["url"], expected_url)
 
     def test_google_news_reprocesses_existing_thread_without_analysis(self):
         title = "全家便利商店攜手特爾電力"

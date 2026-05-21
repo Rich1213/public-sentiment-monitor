@@ -225,11 +225,12 @@ class GoogleNewsCollector:
 
             if self.db:
                 thread_id = self.db.save_thread(
-                    url=title_key,             # 以 title_key 做唯一識別，避免 redirect URL 漂移
+                    url=item["link"],
                     source_name=self.SOURCE_NAME,
                     channel=self.CHANNEL,
                     title=item["title"],
                     board=narrative_type,       # board 欄位存敘事類型
+                    thread_key=title_key,       # 以 title_key 做唯一識別，避免 redirect URL 漂移
                     keyword=self.keyword,
                     published_at=item["published"],
                     push_count=0,

@@ -25,6 +25,7 @@ import os
 import json
 import hashlib
 import logging
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any, Tuple
 from zoneinfo import ZoneInfo
@@ -732,6 +733,21 @@ class SentimentDB:
             return raw
         return dt.isoformat(timespec="seconds")
 
+    def _google_news_fallback_url(self, title: str) -> str:
+        query = urllib.parse.quote(title or "")
+        return (
+            "https://news.google.com/search"
+            f"?q={query}&hl=zh-TW&gl=TW&ceid=TW%3Azh-Hant"
+        )
+
+    def _public_thread_url(self, channel: str, url: Any, title: str) -> str:
+        raw_url = str(url or "").strip()
+        if raw_url.startswith(("http://", "https://")):
+            return raw_url
+        if channel == "google_news" and raw_url.startswith("gnews_title:"):
+            return self._google_news_fallback_url(title)
+        return "#"
+
     def _day_start_str(self, day: str) -> str:
         return f"{day}T00:00:00"
 
@@ -1305,7 +1321,11 @@ class SentimentDB:
                     "brand": kw,
                     "channel": row.get("channel") or "",
                     "title": row.get("title") or "—",
-                    "url": row.get("url") or "#",
+                    "url": self._public_thread_url(
+                        row.get("channel") or "",
+                        row.get("url"),
+                        row.get("title") or "",
+                    ),
                     "score": row.get("score") or 0,
                     "theme": row.get("theme") or "—",
                     "published": row.get("published_at") or "",
@@ -1619,6 +1639,7 @@ class SentimentDB:
         author: str = None,
         board: str = None,
         platform_id: str = None,
+        thread_key: str = None,
         keyword: str = None,
         published_at: str = None,
         push_count: int = None,
@@ -1626,10 +1647,11 @@ class SentimentDB:
         neutral_count: int = None,
         comment_count: int = None,
     ) -> str:
-        thread_id = hashlib.md5(url.encode()).hexdigest()
+        identity_key = thread_key or url
+        thread_id = hashlib.md5(identity_key.encode()).hexdigest()
         source_id = self.get_source_id(source_name)
         ph = self._ph()
-        now = self._local_now().isoformat(timespec="seconds")
+        now = self._now_iso()
         first_seen_at = now
 
         cols = ["id","source_id","channel","title","url","author","board","platform_id","keyword",
@@ -1859,12 +1881,13 @@ class SentimentDB:
             board = src_field.split("/", 1)[1]
 
         thread_id = self.save_thread(
-            url=article.get("storage_key") or article["link"],
+            url=article["link"],
             source_name=source_name,
             channel=channel,
             title=article["title"],
             board=board,
             platform_id=article.get("platform_id"),
+            thread_key=article.get("storage_key") or article["link"],
             keyword=article.get("keyword"),
             published_at=article.get("published"),
             push_count=article.get("push_count"),
