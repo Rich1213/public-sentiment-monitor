@@ -29,6 +29,7 @@ import logging
 from pathlib import Path
 from collections import Counter
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from dotenv import load_dotenv
 
 # 確保專案根目錄在 sys.path（直接執行 worker/runner.py 時需要）
@@ -49,6 +50,10 @@ INTER_ARTICLE_DELAY  = float(os.getenv("INTER_ARTICLE_DELAY", "1.5"))   # NVIDIA
 INTER_BRAND_COOLDOWN = int(os.getenv("INTER_BRAND_COOLDOWN", "60"))      # 品牌間冷卻（秒）
 
 SENTIMENT_EMOJI = {"正面": "✅", "中立": "⚪", "負面": "🚨"}
+
+
+def _local_now() -> datetime:
+    return datetime.now(ZoneInfo(os.getenv("APP_TIMEZONE", "Asia/Taipei")))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -129,7 +134,7 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
     from src.analyzers.dashboard_narrator import DashboardNarrator
 
     _print_sep("═")
-    print(f"  🏪 {keyword}  [{datetime.now().strftime('%Y-%m-%d %H:%M')}]")
+    print(f"  🏪 {keyword}  [{_local_now().strftime('%Y-%m-%d %H:%M')}]")
     _print_sep("═")
 
     db.ensure_keyword(keyword)
@@ -377,7 +382,7 @@ def run_all_brands(
         print(f"  採集上限：每渠道 {FETCH_LIMIT} 篇")
         print(f"  警報閾值：負面強度 ≥ {ALERT_THRESHOLD}")
         print(f"  重新採集：{'是（忽略去重）' if fresh_mode else '否（跳過已採集）'}")
-        print(f"  執行時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"  執行時間：{_local_now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     batch_status = "completed"
     try:
@@ -405,7 +410,7 @@ def run_all_brands(
 
         db.save_daily_snapshots()
         _print_sep("═")
-        print(f"  ✅ 本次監控完成｜{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"  ✅ 本次監控完成｜{_local_now().strftime('%Y-%m-%d %H:%M:%S')}")
         _print_sep("═")
         print()
     except Exception:

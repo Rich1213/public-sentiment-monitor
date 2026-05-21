@@ -25,7 +25,7 @@ import os
 import json
 import hashlib
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, List, Dict, Any, Tuple
 from zoneinfo import ZoneInfo
 
@@ -711,6 +711,27 @@ class SentimentDB:
     def _local_now(self) -> datetime:
         return datetime.now(ZoneInfo(APP_TIMEZONE))
 
+    def _now_iso(self) -> str:
+        return self._local_now().isoformat(timespec="seconds")
+
+    def _parse_local_datetime(self, raw: Any) -> Optional[datetime]:
+        if raw in (None, ""):
+            return None
+        try:
+            dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        except Exception:
+            return None
+        if dt.tzinfo is None:
+            fallback_tz = timezone.utc if self._adapter.is_postgres else ZoneInfo(APP_TIMEZONE)
+            dt = dt.replace(tzinfo=fallback_tz)
+        return dt.astimezone(ZoneInfo(APP_TIMEZONE))
+
+    def _serialize_local_timestamp(self, raw: Any) -> Optional[str]:
+        dt = self._parse_local_datetime(raw)
+        if not dt:
+            return raw
+        return dt.isoformat(timespec="seconds")
+
     def _day_start_str(self, day: str) -> str:
         return f"{day}T00:00:00"
 
@@ -718,7 +739,10 @@ class SentimentDB:
         if not start_at:
             return 0
         try:
-            start_date = datetime.fromisoformat(str(start_at).replace("Z", "+00:00")).date()
+            start_dt = self._parse_local_datetime(start_at)
+            if not start_dt:
+                return 0
+            start_date = start_dt.date()
             end_day = datetime.fromisoformat(end_date).date()
         except Exception:
             return 0
@@ -751,7 +775,7 @@ class SentimentDB:
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
-            now = datetime.now().isoformat()
+            now = self._now_iso()
             c.execute(
                 f"INSERT INTO monitor_batches (batch_key, keywords, fresh_mode, started_at, status) VALUES ({ph},{ph},{ph},{ph},{ph})",
                 (batch_key, self._json_dumps(keywords), int(fresh_mode), now, "running"),
@@ -769,7 +793,7 @@ class SentimentDB:
             c = conn.cursor()
             c.execute(
                 f"UPDATE monitor_batches SET ended_at={ph}, status={ph} WHERE id={ph}",
-                (datetime.now().isoformat(), status, batch_id),
+                (self._now_iso(), status, batch_id),
             )
             conn.commit()
         finally:
@@ -788,18 +812,15 @@ class SentimentDB:
             if not rows:
                 return 0
 
-            now = datetime.now()
+            now = self._local_now()
             closed = 0
             for row in rows:
-                try:
-                    started_at = datetime.fromisoformat(row["started_at"])
-                except Exception:
-                    started_at = now - timedelta(days=1)
+                started_at = self._parse_local_datetime(row["started_at"]) or (now - timedelta(days=1))
                 if (now - started_at) < timedelta(minutes=older_than_minutes):
                     continue
                 c.execute(
                     f"UPDATE monitor_batches SET ended_at={ph}, status={ph} WHERE id={ph}",
-                    (now.isoformat(), "stale", row["id"]),
+                    (now.isoformat(timespec="seconds"), "stale", row["id"]),
                 )
                 closed += 1
             conn.commit()
@@ -835,7 +856,7 @@ class SentimentDB:
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
-            now = datetime.now().isoformat()
+            now = self._now_iso()
             c.execute(
                 f"INSERT INTO monitoring_runs (keyword, started_at, fresh_mode) VALUES ({ph},{ph},{ph})",
                 (keyword, now, int(fresh_mode))
@@ -857,7 +878,7 @@ class SentimentDB:
             c = conn.cursor()
             c.execute(
                 f"UPDATE monitoring_runs SET ended_at={ph}, articles_found={ph}, articles_new={ph} WHERE id={ph}",
-                (datetime.now().isoformat(), articles_found, articles_new, run_id)
+                (self._now_iso(), articles_found, articles_new, run_id)
             )
             conn.commit()
         finally:
@@ -874,7 +895,7 @@ class SentimentDB:
             if not rows:
                 return 0
 
-            now = datetime.now()
+            now = self._local_now()
             to_close = []
             keyword_set = set(keywords or [])
             for row in rows:
@@ -882,10 +903,7 @@ class SentimentDB:
                     continue
                 if older_than_minutes is not None:
                     started_at = row.get("started_at")
-                    try:
-                        started_dt = datetime.fromisoformat(started_at)
-                    except Exception:
-                        started_dt = now - timedelta(days=1)
+                    started_dt = self._parse_local_datetime(started_at) or (now - timedelta(days=1))
                     if (now - started_dt) < timedelta(minutes=older_than_minutes):
                         continue
                 to_close.append(int(row["id"]))
@@ -893,7 +911,7 @@ class SentimentDB:
             for run_id in to_close:
                 c.execute(
                     f"UPDATE monitoring_runs SET ended_at={ph}, articles_found=COALESCE(articles_found, 0), articles_new=COALESCE(articles_new, 0) WHERE id={ph}",
-                    (now.isoformat(), run_id)
+                    (now.isoformat(timespec="seconds"), run_id)
                 )
             conn.commit()
             return len(to_close)
@@ -1011,7 +1029,7 @@ class SentimentDB:
             if not row:
                 return None
             data = self._adapter.fetchone_dict(c, row)
-            return data.get("ended_at") or data.get("started_at")
+            return self._serialize_local_timestamp(data.get("ended_at") or data.get("started_at"))
         finally:
             conn.close()
 

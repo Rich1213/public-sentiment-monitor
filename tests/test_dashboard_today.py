@@ -3,6 +3,7 @@ import tempfile
 import unittest
 import hashlib
 from datetime import datetime, timedelta
+from unittest.mock import patch
 
 from src.collectors.google_news_collector import GoogleNewsCollector
 from src.utils.db_manager import SentimentDB
@@ -311,6 +312,30 @@ class DashboardTodayTest(unittest.TestCase):
         self.assertEqual(summary["total_articles"], 1)
         self.assertIn("7-ELEVEN", summary["brand_map"])
         self.assertEqual(summary["brand_map"]["7-ELEVEN"]["analyses"][0]["title"], "上一版完整結果")
+
+    def test_dashboard_day_summary_returns_timezone_aware_updated_at_for_new_runs(self):
+        run_id = self.db.create_run("7-ELEVEN")
+        self._seed_analysis(run_id, "7-ELEVEN", "https://example.com/tz-run", "時區測試文章")
+        self.db.close_run(run_id, articles_found=1, articles_new=1)
+
+        summary = self.db.get_dashboard_day_summary()
+
+        self.assertIsNotNone(summary["updated_at"])
+        self.assertRegex(summary["updated_at"], r"[+-]\d{2}:\d{2}$")
+        self.assertTrue(summary["updated_at"].endswith("+08:00"))
+
+    def test_dashboard_day_summary_converts_legacy_postgres_naive_utc_to_taipei_time(self):
+        run_id = self.db.create_run("7-ELEVEN")
+        self._seed_analysis(run_id, "7-ELEVEN", "https://example.com/legacy-utc", "舊版 UTC 資料")
+        self._execute(
+            "UPDATE monitoring_runs SET ended_at = ? WHERE id = ?",
+            ("2026-05-21T05:48:48", run_id),
+        )
+
+        with patch.object(type(self.db._adapter), "is_postgres", new=property(lambda _self: True)):
+            summary = self.db.get_dashboard_day_summary(snapshot_date="2026-05-21")
+
+        self.assertEqual(summary["updated_at"], "2026-05-21T13:48:48+08:00")
 
     def test_save_daily_snapshots_persists_today_rows(self):
         run_id = self.db.create_run("7-ELEVEN")
