@@ -62,6 +62,46 @@ def _print_banner():
     print("╚══════════════════════════════════════════════════════════╝")
 
 
+def _print_env_diagnostic():
+    """
+    啟動時列印關鍵環境變數狀態，快速確認連線設定是否正確。
+    不印出 key 值本身，只印是否存在（✅ / ❌）。
+    """
+    def _status(key: str) -> str:
+        val = os.getenv(key, "").strip()
+        return f"✅ 已設定（{len(val)} chars）" if val else "❌ 未設定"
+
+    def _flag(key: str, default: str = "false") -> bool:
+        return os.getenv(key, default).strip().lower() in {"1", "true", "yes", "on"}
+
+    scraperapi = os.getenv("SCRAPERAPI_KEY", "").strip()
+    proxy      = os.getenv("DCARD_PROXY_URL", "").strip()
+    telegram_enabled = _flag("TELEGRAM_ENABLED")
+    gnews_fallback_enabled = _flag("GOOGLE_NEWS_USE_SCRAPERAPI_FALLBACK")
+
+    if scraperapi:
+        dcard_mode = "ScraperAPI（雲端 WAF 繞過）"
+    elif proxy:
+        host = proxy.split("@")[-1] if "@" in proxy else proxy
+        dcard_mode = f"Residential Proxy（{host}）"
+    else:
+        dcard_mode = "直連（本機可用，雲端可能 403）"
+
+    db_url = os.getenv("DATABASE_URL", "").strip()
+    db_mode = f"PostgreSQL（{db_url[:30]}...）" if db_url else "SQLite（本地）"
+
+    print("\n  ┌─ 環境診斷 ──────────────────────────────────────────────")
+    print(f"  │  AI（OpenAI/OpenRouter） : {_status('OPENAI_API_KEY')}")
+    print(f"  │  NVIDIA fallback         : {_status('NVIDIA_API_KEY')}")
+    print(f"  │  Telegram 警報           : {'✅ 已啟用' if telegram_enabled else '⏸ 預設關閉'}")
+    print(f"  │  YouTube Data API        : {_status('YOUTUBE_API_KEY')}")
+    print(f"  │  ScraperAPI              : {_status('SCRAPERAPI_KEY')}")
+    print(f"  │  Google News fallback    : {'✅ 已啟用' if gnews_fallback_enabled else '⏸ 預設關閉'}")
+    print(f"  │  Dcard 連線模式          : {dcard_mode}")
+    print(f"  │  資料庫                  : {db_mode}")
+    print("  └────────────────────────────────────────────────────────")
+
+
 def _print_sep(char="─", width=60):
     print(char * width)
 
@@ -318,16 +358,20 @@ def run_all_brands(
     if batch_id is None:
         batch_id = db.create_monitor_batch(keywords=keywords, fresh_mode=fresh_mode)
 
-    try:
-        notifier = TelegramNotifier()
-    except Exception as e:
-        print(f"\n  ⚠️  Telegram 未設定，將略過警報通知：{e}")
+    if TelegramNotifier.is_enabled():
+        try:
+            notifier = TelegramNotifier()
+        except Exception as e:
+            print(f"\n  ⚠️  Telegram 已啟用但設定不完整，將略過警報通知：{e}")
+            notifier = None
+    else:
         notifier = None
 
     if print_banner:
         if cleaned:
             print(f"  已自動關閉 {cleaned} 筆逾時未結束的舊 run")
         _print_banner()
+        _print_env_diagnostic()
         print(f"\n  監控品牌：{', '.join(keywords)}")
         print(f"  資料來源：Google News, PTT, Dcard")
         print(f"  採集上限：每渠道 {FETCH_LIMIT} 篇")

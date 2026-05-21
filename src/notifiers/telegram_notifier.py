@@ -9,9 +9,20 @@ logger = get_logger(__name__)
 
 
 class TelegramNotifier:
+    @staticmethod
+    def _is_truthy(value: str) -> bool:
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    @classmethod
+    def is_enabled(cls) -> bool:
+        return cls._is_truthy(os.getenv("TELEGRAM_ENABLED", "false"))
+
     def __init__(self):
         self.bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
         self.chat_id   = os.getenv("TELEGRAM_CHAT_ID")
+
+        if not self.is_enabled():
+            raise ValueError("Telegram alerts are disabled.")
 
         if not self.bot_token or not self.chat_id:
             raise ValueError("TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not found in environment variables.")

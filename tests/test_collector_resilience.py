@@ -6,6 +6,7 @@ from src.collectors.google_news_collector import GoogleNewsCollector
 from src.collectors.ptt_collector import PTTCollector
 import src.collectors.dcard_collector as dcard_module
 from src.collectors.dcard_collector import DcardCollector
+from src.notifiers.telegram_notifier import TelegramNotifier
 
 
 class CollectorResilienceTest(unittest.TestCase):
@@ -56,7 +57,14 @@ class CollectorResilienceTest(unittest.TestCase):
             )
         ]
 
-        with patch("src.collectors.google_news_collector.os.getenv", return_value="fake-key"), \
+        def fake_getenv(key, default=""):
+            if key == "SCRAPERAPI_KEY":
+                return "fake-key"
+            if key == "GOOGLE_NEWS_USE_SCRAPERAPI_FALLBACK":
+                return "true"
+            return default
+
+        with patch("src.collectors.google_news_collector.os.getenv", side_effect=fake_getenv), \
              patch("src.collectors.google_news_collector.feedparser.parse", side_effect=[Exception("direct blocked"), fallback_feed]) as mock_parse, \
              patch("src.collectors.google_news_collector.requests.get", return_value=fallback_response) as mock_get:
             rows = collector._fetch_rss_feed(limit=5)
@@ -65,6 +73,27 @@ class CollectorResilienceTest(unittest.TestCase):
         self.assertEqual(rows[0]["title"], "7-ELEVEN 食安新聞")
         self.assertEqual(mock_parse.call_count, 2)
         mock_get.assert_called_once()
+
+    def test_google_news_does_not_fallback_to_scraperapi_by_default(self):
+        collector = GoogleNewsCollector("7-ELEVEN")
+
+        def fake_getenv(key, default=""):
+            if key == "SCRAPERAPI_KEY":
+                return "fake-key"
+            return default
+
+        with patch("src.collectors.google_news_collector.os.getenv", side_effect=fake_getenv), \
+             patch("src.collectors.google_news_collector.feedparser.parse", side_effect=Exception("direct blocked")) as mock_parse, \
+             patch("src.collectors.google_news_collector.requests.get") as mock_get:
+            rows = collector._fetch_rss_feed(limit=5)
+
+        self.assertEqual(rows, [])
+        mock_parse.assert_called_once()
+        mock_get.assert_not_called()
+
+    def test_telegram_is_disabled_by_default(self):
+        with patch.dict("os.environ", {}, clear=True):
+            self.assertFalse(TelegramNotifier.is_enabled())
 
     def test_dcard_scraperapi_mode_uses_bare_requests_path(self):
         with patch("src.collectors.dcard_collector.os.getenv", side_effect=lambda key, default="": "fake-key" if key == "SCRAPERAPI_KEY" else ""), \

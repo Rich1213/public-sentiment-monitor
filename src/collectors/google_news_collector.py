@@ -73,6 +73,10 @@ class GoogleNewsCollector:
         self.db           = db
         self.search_query = get_search_query(keyword, "google_news")
 
+    @staticmethod
+    def _is_truthy(value: str) -> bool:
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
     def _fetch_rss_feed(self, limit: int = 30) -> List[Dict]:
         """透過 Google News RSS 獲取新聞列表。
 
@@ -86,6 +90,9 @@ class GoogleNewsCollector:
         )
 
         scraper_key = os.getenv("SCRAPERAPI_KEY", "").strip()
+        fallback_enabled = self._is_truthy(
+            os.getenv("GOOGLE_NEWS_USE_SCRAPERAPI_FALLBACK", "false")
+        )
 
         try:
             print("  [Google News] 直連採集（免費優先）...")
@@ -107,8 +114,11 @@ class GoogleNewsCollector:
             return results
         except Exception as e:
             print(f"  [Google News] RSS 獲取失敗：{e}")
+            if not fallback_enabled:
+                print("  [Google News] ScraperAPI fallback 預設關閉，停止於直連失敗。")
+                return []
             if not scraper_key:
-                print("  [Google News] 未設定 ScraperAPI，停止於直連失敗。")
+                print("  [Google News] 已啟用 fallback，但未設定 ScraperAPI。")
                 return []
 
             try:
