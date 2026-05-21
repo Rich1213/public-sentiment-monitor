@@ -115,7 +115,10 @@
 
   /* ── Channel coverage ── */
   .ch-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-  .ch-label { font-size: 12px; color: #94a3b8; width: 90px; flex-shrink: 0; }
+  .ch-label { font-size: 12px; color: #94a3b8; width: 120px; flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; }
+  .ch-label-icon { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; color: #94a3b8; flex-shrink: 0; }
+  .ch-label-icon svg { width: 14px; height: 14px; display: block; fill: currentColor; }
+  .ch-label-text { display: inline-block; }
   .ch-bar-wrap { flex: 1; height: 6px; background: #1e2235; border-radius: 3px; overflow: hidden; }
   .ch-bar-fill { height: 100%; border-radius: 3px; transition: width 0.6s ease; }
   .ch-count { font-size: 11px; color: #64748b; width: 28px; text-align: right; }
@@ -400,12 +403,22 @@ function renderTrend(trendData) {
   });
 }
 
+function getChannelIconSvg(channel) {
+  const icons = {
+    google_news: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5A1.5 1.5 0 0 1 4.5 1h5A1.5 1.5 0 0 1 11 2.5V3h1.5A1.5 1.5 0 0 1 14 4.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 3 12.5V2.5Zm1 1V13h8.5a.5.5 0 0 0 .5-.5v-8a.5.5 0 0 0-.5-.5H11v.5A1.5 1.5 0 0 1 9.5 6h-4A1.5 1.5 0 0 1 4 4.5V3.5Zm1-.5v1.5a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5V2.5a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.5.5ZM5.5 8h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1 0-1Zm0 2h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1 0-1Z"/></svg>',
+    ptt: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3A1.5 1.5 0 0 0 1 4.5v7A1.5 1.5 0 0 0 2.5 13H5l2.2 2.2c.5.5 1.3.15 1.3-.56V13h5A1.5 1.5 0 0 0 15 11.5v-7A1.5 1.5 0 0 0 13.5 3h-11Zm1.25 2h4a1.75 1.75 0 1 1 0 3.5H5.5V11H3.75V5Zm1.75 2h2a.25.25 0 0 0 0-.5h-2V7Zm4.5-1.5h3v1h-3v-1Zm0 2h3v1h-3v-1Zm0 2h2v1h-2v-1Z"/></svg>',
+    dcard: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5A2.5 2.5 0 0 1 5.5 2h5A2.5 2.5 0 0 1 13 4.5v7a2.5 2.5 0 0 1-2.5 2.5h-5A2.5 2.5 0 0 1 3 11.5v-7Zm3.1 2.25a1.85 1.85 0 1 0 0 3.7H9.9a1.85 1.85 0 1 0 0-3.7H6.1Zm0 1a.85.85 0 1 1 0 1.7H9.9a.85.85 0 1 1 0-1.7H6.1Z"/></svg>',
+    youtube: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.9 4.7c-.2-.8-.8-1.4-1.6-1.6C10.9 2.8 8 2.8 8 2.8s-2.9 0-4.3.3c-.8.2-1.4.8-1.6 1.6C1.8 6.1 1.8 8 1.8 8s0 1.9.3 3.3c.2.8.8 1.4 1.6 1.6 1.4.3 4.3.3 4.3.3s2.9 0 4.3-.3c.8-.2 1.4-.8 1.6-1.6.3-1.4.3-3.3.3-3.3s0-1.9-.3-3.3ZM6.7 10.5v-5L10.9 8l-4.2 2.5Z"/></svg>',
+  };
+  return icons[channel] || '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/></svg>';
+}
+
 function renderChannelBars(counts) {
   const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
   const labels = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', youtube: 'YouTube' };
   document.getElementById('channel-bars').innerHTML = Object.entries(counts).map(([ch, cnt]) => `
     <div class="ch-row">
-      <span class="ch-label">${labels[ch]}</span>
+      <span class="ch-label"><span class="ch-label-icon">${getChannelIconSvg(ch)}</span><span class="ch-label-text">${labels[ch]}</span></span>
       <div class="ch-bar-wrap"><div class="ch-bar-fill" style="width:${Math.round(cnt/total*100)}%; background:${CH_COLORS[ch]}"></div></div>
       <span class="ch-count">${cnt}</span>
     </div>`).join('');
