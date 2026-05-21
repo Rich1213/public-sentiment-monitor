@@ -31,6 +31,11 @@ from typing import Optional, List, Dict, Any, Tuple
 from zoneinfo import ZoneInfo
 
 from src.utils.score_utils import normalize_score, is_legacy_score
+from src.utils.alert_engine import (
+    is_alert_eligible, is_thread_alert_by_items,
+    build_alert_from_row, build_alert_from_items,
+    sort_alerts,
+)
 
 logger = logging.getLogger(__name__)
 APP_TIMEZONE = os.getenv("APP_TIMEZONE", "Asia/Taipei")
@@ -1304,40 +1309,23 @@ class SentimentDB:
             if channel in channel_counts:
                 channel_counts[channel] += 1
 
-            if row.get("sentiment") == "負面" and row.get("score", 0) >= 3:
-                thread_ctx = active_threads.get(thread_id, {})
-                first_seen_at = thread_ctx.get("first_seen_at") or row.get("first_seen_at") or row.get("published_at") or ""
-                recent_activity_at = thread_ctx.get("recent_activity_at") or row.get("published_at") or first_seen_at or ""
-                ongoing_days = (
-                    thread_ctx.get("ongoing_days")
-                    if thread_id in active_threads
-                    else (
-                        self._days_since(first_seen_at, snapshot_date)
-                        if first_seen_at and str(first_seen_at)[:10] < snapshot_date
-                        else 0
-                    )
+            if is_alert_eligible(row.get("sentiment", ""), row.get("score", 0)):
+                # 補上 url 轉換後再交給 alert_engine 建構
+                row_with_url = dict(row)
+                row_with_url["url"] = self._public_thread_url(
+                    row.get("channel") or "",
+                    row.get("url"),
+                    row.get("title") or "",
                 )
-                alert = {
-                    "brand": kw,
-                    "channel": row.get("channel") or "",
-                    "title": row.get("title") or "—",
-                    "url": self._public_thread_url(
-                        row.get("channel") or "",
-                        row.get("url"),
-                        row.get("title") or "",
-                    ),
-                    "score": row.get("score") or 0,
-                    "theme": row.get("theme") or "—",
-                    "published": row.get("published_at") or "",
-                    "recent_activity_at": recent_activity_at,
-                    "first_seen_at": first_seen_at,
-                    "ongoing_days": ongoing_days,
-                    "thread_id": thread_id,
-                }
+                row_with_url["keyword"] = kw
+                alert = build_alert_from_row(row_with_url, active_threads, snapshot_date)
                 brand["alerts"].append(alert)
                 if thread_id not in seen_global_alerts:
                     seen_global_alerts.add(thread_id)
                     all_alerts.append(alert)
+
+        # items_by_thread：同時按 thread_id 分組，供後續留言警報判斷
+        items_by_thread: Dict[str, List[Dict[str, Any]]] = {}
 
         for row in items_by_key.values():
             kw = row["keyword"]
@@ -1360,6 +1348,34 @@ class SentimentDB:
             )
             brand["itemAnalyses"].append(row)
 
+            tid = row.get("thread_id")
+            if tid:
+                items_by_thread.setdefault(str(tid), []).append(row)
+
+        # Scenario 2：留言聚合警報
+        # 貼文層已觸發的 thread_id 跳過（seen_global_alerts 已記錄）
+        for tid_str, item_rows in items_by_thread.items():
+            if tid_str in seen_global_alerts:
+                continue
+            if not is_thread_alert_by_items(item_rows):
+                continue
+
+            kw = item_rows[0].get("keyword", "")
+            brand = brand_map.get(kw)
+            if not brand:
+                continue
+
+            alert = build_alert_from_items(kw, item_rows, active_threads, snapshot_date)
+            # url 轉換（與 Scenario 1 一致）
+            alert["url"] = self._public_thread_url(
+                alert.get("channel") or "",
+                alert.get("url"),
+                alert.get("title") or "",
+            )
+            brand["alerts"].append(alert)
+            seen_global_alerts.add(tid_str)
+            all_alerts.append(alert)
+
         for kw, brand in brand_map.items():
             pr_row = pr_by_keyword.get(kw)
             if pr_row:
@@ -1372,11 +1388,7 @@ class SentimentDB:
             "active_batch": active_batch,
             "brand_map": brand_map,
             "channel_counts": channel_counts,
-            "all_alerts": sorted(
-                all_alerts,
-                key=lambda row: (row.get("score", 0), row.get("recent_activity_at") or ""),
-                reverse=True,
-            ),
+            "all_alerts": sort_alerts(all_alerts),
             "total_articles": sum(brand.get("total", 0) for brand in brand_map.values()),
             "latest_run_at": latest_completed_at,
             "empty_snapshot": empty_snapshot,

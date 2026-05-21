@@ -26,6 +26,8 @@ import os
 import feedparser
 import urllib.parse
 import re
+import email.utils
+from datetime import datetime, timezone, timedelta
 from typing import List, Dict, Optional
 import requests
 
@@ -44,6 +46,34 @@ NARRATIVE_RULES = [
     ("品牌行銷",  ["代言", "聯名", "限量", "新品", "推出", "首賣", "體驗",
                     "門市", "快閃", "巡迴", "音樂節", "藝人"]),
 ]
+
+def _parse_rss_published(published_str: str) -> Optional[datetime]:
+    """解析 RSS published 字串為 UTC datetime，失敗回傳 None。"""
+    if not published_str:
+        return None
+    try:
+        dt = email.utils.parsedate_to_datetime(published_str)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _is_recent_article(published_str: str, max_age_days: int = 2) -> bool:
+    """
+    判斷文章是否在允許範圍內（預設今天或昨天，容許時區差異）。
+
+    Google News RSS 的 published 為 UTC 時間，台灣 UTC+8，
+    所以用 2 天容許窗口避免誤殺跨午夜採集的當日新聞。
+    """
+    dt = _parse_rss_published(published_str)
+    if dt is None:
+        # 無法解析日期 → 允許通過（不因格式問題誤殺）
+        return True
+    age = datetime.now(timezone.utc) - dt
+    return age.days <= max_age_days
+
 
 def classify_narrative(title: str, summary: str = "") -> str:
     """從標題和摘要自動分類敘事類型。"""
@@ -177,6 +207,14 @@ class GoogleNewsCollector:
         for item, title_key in zip(raw_news, title_keys):
             if len(articles) >= limit:
                 break
+
+            # 日期過濾：只接受今天或昨天的文章（容許 UTC/台灣時區差異）
+            # Google News 有時會重新浮出舊文章，此處擋掉超過 2 天的內容
+            if not _is_recent_article(item.get("published", ""), max_age_days=2):
+                pub_str = item.get("published", "unknown")
+                print(f"  [Google News] 跳過舊文章（{pub_str[:16]}）：{item['title'][:50]}")
+                skipped_dup += 1
+                continue
 
             matched, reason = is_relevant_with_two_stage_attribution(
                 self.keyword,

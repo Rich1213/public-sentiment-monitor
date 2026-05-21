@@ -24,6 +24,7 @@ import os
 import sys
 import time
 import hashlib
+from typing import Dict, List
 import argparse
 import logging
 from pathlib import Path
@@ -40,7 +41,12 @@ if str(_PROJECT_ROOT) not in sys.path:
 load_dotenv(_PROJECT_ROOT / ".env")
 
 from src.utils.logger import get_logger
-from src.utils.score_utils import normalize_score, ALERT_THRESHOLD
+from src.utils.score_utils import normalize_score
+from src.utils.alert_engine import (
+    ALERT_THRESHOLD,
+    is_alert_eligible, is_thread_alert_by_items,
+    build_alert_from_runtime,
+)
 logger = get_logger(__name__)
 
 # ── 採集與警報設定 ───────────────────────────────────────────────
@@ -182,8 +188,9 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
         print("  📰 各篇輿情分析")
         _print_sep()
 
-        analyses    = []
-        alert_pairs = []   # [(article, analysis), ...]
+        analyses      = []
+        alert_pairs   = []   # [(article, analysis), ...]
+        alerted_links = set()  # 已觸發警報的 article link，避免貼文＋留言重複通知
 
         for i, article in enumerate(all_articles, 1):
             if i > 1:
@@ -211,6 +218,8 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
             except Exception as e:
                 logger.warning("分析結果儲存失敗 [%s]：%s", article.get("link", "?"), e)
 
+            # ── 留言分析（有留言機制的渠道）────────────────────────
+            comment_analyses: List[Dict] = []   # 收集本篇留言的分析結果
             if article.get("channel") == "youtube":
                 for comment in article.get("analysis_comment_items", []):
                     try:
@@ -218,6 +227,8 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
                             article["title"],
                             f"YouTube留言：{comment.get('content', '')}"
                         )
+                        comment_analysis["score"] = normalize_score(comment_analysis.get("score"))
+                        comment_analyses.append(comment_analysis)
                         comment_item_id = db.get_thread_item_id_by_platform_item_id(
                             comment.get("platform_item_id")
                         )
@@ -252,9 +263,34 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
             print(f"      💡 {reason}")
             print(f"      🔗 {article['link']}")
 
-            # 達到警報閾值
-            if sentiment == "負面" and score >= ALERT_THRESHOLD:
+            article_link = article.get("link", "")
+
+            # Scenario 1：貼文本身達到警報閾值
+            if is_alert_eligible(sentiment, score):
                 alert_pairs.append((article, analysis))
+                alerted_links.add(article_link)
+
+            # Scenario 2：留言聚合達到警報閾值（貼文本身未觸發才判斷，避免重複）
+            if article_link not in alerted_links and is_thread_alert_by_items(comment_analyses):
+                high_risk = [
+                    ca for ca in comment_analyses
+                    if is_alert_eligible(ca.get("sentiment", ""), ca.get("score", 0))
+                ]
+                max_score  = max(int(ca.get("score", 0)) for ca in high_risk)
+                themes     = [ca.get("theme", "") for ca in high_risk if ca.get("theme")]
+                top_theme  = max(set(themes), key=themes.count) if themes else "留言負面聲浪"
+                synth_analysis = {
+                    "sentiment":    "負面",
+                    "score":        max_score,
+                    "theme":        top_theme,
+                    "reason":       f"今日 {len(high_risk)} 則留言情緒強度達警報閾值",
+                    "voice_source": "留言",
+                    "analyzed_with": "留言聚合",
+                    "trigger":      "comments",
+                }
+                alert_pairs.append((article, synth_analysis))
+                alerted_links.add(article_link)
+                print(f"      🚨 留言警報：{len(high_risk)} 則高風險留言觸發 Scenario 2")
 
         # ── 3. 輿情彙整統計 ──────────────────────────────────────
         print()
