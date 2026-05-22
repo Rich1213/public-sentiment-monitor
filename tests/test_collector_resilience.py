@@ -96,16 +96,12 @@ class CollectorResilienceTest(unittest.TestCase):
             self.assertFalse(TelegramNotifier.is_enabled())
 
     def test_dcard_scraperapi_mode_uses_bare_requests_path(self):
-        with patch("src.collectors.dcard_collector.os.getenv", side_effect=lambda key, default="": "fake-key" if key == "SCRAPERAPI_KEY" else ""), \
-             patch.object(DcardCollector, "_init_session") as mock_init_session:
-            mock_session = Mock()
-            mock_init_session.return_value = mock_session
+        with patch("src.collectors.dcard_collector.os.getenv", side_effect=lambda key, default="": "fake-key" if key == "SCRAPERAPI_KEY" else ""):
             collector = DcardCollector("7-ELEVEN")
 
         resp = Mock()
         resp.status_code = 200
         collector._scraperapi_get = Mock(return_value=resp)
-        collector.session.get = Mock(side_effect=AssertionError("session.get should not be used"))
 
         result = collector._get("https://www.dcard.tw/search/posts", params={"query": "7-ELEVEN"})
 

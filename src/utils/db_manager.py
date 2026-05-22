@@ -286,6 +286,13 @@ class SentimentDB:
                     UNIQUE(snapshot_date, keyword)
                 )""")
                 c.execute("CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date ON daily_snapshots(snapshot_date)")
+                c.execute("""CREATE TABLE IF NOT EXISTS collector_cache (
+                    cache_key    TEXT PRIMARY KEY,
+                    payload_json TEXT NOT NULL,
+                    expires_at   TEXT NOT NULL,
+                    updated_at   TEXT NOT NULL
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_collector_cache_expires ON collector_cache(expires_at)")
             else:
                 c.execute("PRAGMA table_info(pr_reports)")
                 cols = [row["name"] for row in c.fetchall()]
@@ -337,6 +344,13 @@ class SentimentDB:
                     UNIQUE(snapshot_date, keyword)
                 )""")
                 c.execute("CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date ON daily_snapshots(snapshot_date)")
+                c.execute("""CREATE TABLE IF NOT EXISTS collector_cache (
+                    cache_key    TEXT PRIMARY KEY,
+                    payload_json TEXT NOT NULL,
+                    expires_at   TEXT NOT NULL,
+                    updated_at   TEXT NOT NULL
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_collector_cache_expires ON collector_cache(expires_at)")
             conn.commit()
         except Exception:
             conn.rollback()
@@ -488,6 +502,14 @@ class SentimentDB:
                 UNIQUE(snapshot_date, keyword)
             );
             CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date ON daily_snapshots(snapshot_date);
+
+            CREATE TABLE IF NOT EXISTS collector_cache (
+                cache_key    TEXT PRIMARY KEY,
+                payload_json TEXT NOT NULL,
+                expires_at   TEXT NOT NULL,
+                updated_at   TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_collector_cache_expires ON collector_cache(expires_at);
         """
 
     def _postgres_schema_statements(self) -> List[str]:
@@ -623,6 +645,13 @@ class SentimentDB:
                 UNIQUE(snapshot_date, keyword)
             )""",
             "CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date ON daily_snapshots(snapshot_date)",
+            """CREATE TABLE IF NOT EXISTS collector_cache (
+                cache_key    TEXT PRIMARY KEY,
+                payload_json TEXT NOT NULL,
+                expires_at   TEXT NOT NULL,
+                updated_at   TEXT NOT NULL
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_collector_cache_expires ON collector_cache(expires_at)",
         ]
 
     # ── 共用 SQL helper ──────────────────────────────────────
@@ -755,6 +784,62 @@ class SentimentDB:
 
     def _day_start_str(self, day: str) -> str:
         return f"{day}T00:00:00"
+
+    def get_collector_cache(self, cache_key: str) -> Optional[Dict[str, Any]]:
+        ph = self._ph()
+        now_dt = self._local_now()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"SELECT payload_json, expires_at FROM collector_cache WHERE cache_key = {ph}",
+                (cache_key,),
+            )
+            row = c.fetchone()
+            if not row:
+                return None
+            payload_json = row[0] if self._adapter.is_postgres else row["payload_json"]
+            expires_at = row[1] if self._adapter.is_postgres else row["expires_at"]
+            expires_dt = self._parse_local_datetime(expires_at)
+            if not expires_dt or expires_dt <= now_dt:
+                c.execute(f"DELETE FROM collector_cache WHERE cache_key = {ph}", (cache_key,))
+                conn.commit()
+                return None
+            return json.loads(payload_json)
+        finally:
+            conn.close()
+
+    def set_collector_cache(self, cache_key: str, payload: Dict[str, Any], ttl_minutes: int) -> None:
+        ph = self._ph()
+        now = self._local_now().isoformat(timespec="seconds")
+        expires_at = (self._local_now() + timedelta(minutes=ttl_minutes)).isoformat(timespec="seconds")
+        payload_json = self._json_dumps(payload)
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            if self._adapter.is_postgres:
+                c.execute(
+                    f"""INSERT INTO collector_cache (cache_key, payload_json, expires_at, updated_at)
+                        VALUES ({ph},{ph},{ph},{ph})
+                        ON CONFLICT (cache_key) DO UPDATE
+                        SET payload_json = EXCLUDED.payload_json,
+                            expires_at = EXCLUDED.expires_at,
+                            updated_at = EXCLUDED.updated_at""",
+                    (cache_key, payload_json, expires_at, now),
+                )
+            else:
+                c.execute(
+                    f"""INSERT INTO collector_cache (cache_key, payload_json, expires_at, updated_at)
+                        VALUES ({ph},{ph},{ph},{ph})
+                        ON CONFLICT(cache_key) DO UPDATE SET
+                            payload_json = excluded.payload_json,
+                            expires_at = excluded.expires_at,
+                            updated_at = excluded.updated_at""",
+                    (cache_key, payload_json, expires_at, now),
+                )
+            conn.commit()
+        finally:
+            conn.close()
 
     def _days_since(self, start_at: Optional[str], end_date: str) -> int:
         if not start_at:

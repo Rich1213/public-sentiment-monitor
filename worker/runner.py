@@ -86,17 +86,13 @@ def _print_env_diagnostic():
         return os.getenv(key, default).strip().lower() in {"1", "true", "yes", "on"}
 
     scraperapi = os.getenv("SCRAPERAPI_KEY", "").strip()
-    proxy      = os.getenv("DCARD_PROXY_URL", "").strip()
     telegram_enabled = _flag("TELEGRAM_ENABLED")
     gnews_fallback_enabled = _flag("GOOGLE_NEWS_USE_SCRAPERAPI_FALLBACK")
 
     if scraperapi:
         dcard_mode = "ScraperAPI（雲端 WAF 繞過）"
-    elif proxy:
-        host = proxy.split("@")[-1] if "@" in proxy else proxy
-        dcard_mode = f"Residential Proxy（{host}）"
     else:
-        dcard_mode = "直連（本機可用，雲端可能 403）"
+        dcard_mode = "停用（需設定 SCRAPERAPI_KEY）"
 
     db_url = os.getenv("DATABASE_URL", "").strip()
     db_mode = f"PostgreSQL（{db_url[:30]}...）" if db_url else "SQLite（本地）"

@@ -11,3 +11,9 @@ test('channel coverage labels include monochrome inline SVG icons', () => {
   assert.match(html, /class="ch-label-icon"/);
   assert.match(html, /viewBox="0 0 16 16"/);
 });
+
+test('brand matrix includes an aggregated 其他 slot for non-brand keywords', () => {
+  assert.match(html, /const BRAND_MATRIX_LABELS = \['7-ELEVEN', '全家', '萊爾富', 'OK mart', '其他'\];/);
+  assert.match(html, /function buildBrandMatrixMap\(brandMap\)/);
+  assert.match(html, /matrixMap\['其他'\]/);
+});

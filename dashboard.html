@@ -41,6 +41,7 @@
   /* ── Grid ── */
   .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
   .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+  #brand-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
   .grid-2 { display: grid; grid-template-columns: 3fr 2fr; gap: 12px; margin-bottom: 16px; }
   .grid-2-eq { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
 
@@ -152,6 +153,7 @@
   /* ── Responsive ── */
   @media (max-width: 1100px) {
     .grid-4 { grid-template-columns: repeat(2, 1fr); }
+    #brand-grid { grid-template-columns: repeat(2, 1fr); }
   }
   @media (max-width: 900px) {
     .grid-3 { grid-template-columns: 1fr 1fr; }
@@ -161,6 +163,7 @@
   @media (max-width: 600px) {
     .grid-3 { grid-template-columns: 1fr; }
     .grid-4 { grid-template-columns: 1fr; }
+    #brand-grid { grid-template-columns: 1fr; }
   }
 </style>
 </head>
@@ -228,7 +231,7 @@
   </div>
 
   <!-- ── Zone 2: Brand Matrix + Trend ── -->
-  <div class="section-header"><span class="zone-badge">2</span> 四品牌情緒矩陣</div>
+  <div class="section-header"><span class="zone-badge">2</span> 品牌情緒矩陣</div>
   <div class="grid-4" id="brand-grid" style="margin-bottom:16px">
     <div class="loading"><span class="spinner"></span>載入中</div>
   </div>
@@ -314,6 +317,7 @@ const API = new URLSearchParams(window.location.search).get('api')
   || localStorage.getItem('psm-api')
   || 'https://web-production-7a3df.up.railway.app';
 const BRANDS = ['7-ELEVEN', '全家', '萊爾富', 'OK mart'];
+const BRAND_MATRIX_LABELS = ['7-ELEVEN', '全家', '萊爾富', 'OK mart', '其他'];
 const CH_COLORS = { google_news: '#818cf8', ptt: '#34d399', dcard: '#fb923c', youtube: '#f87171' };
 const BRAND_COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6'];
 const { normalizeScore, buildPrimarySummary, getArticleRiskBadge, deriveProgressState, inferBatchStart, summarizeCommentInsights } = window.DashboardSummary;
@@ -408,12 +412,48 @@ function renderKPIs(brandMap, totalAlerts, totalArticles) {
   }
 }
 
+function buildBrandMatrixMap(brandMap) {
+  const matrixMap = {};
+  for (const brand of BRANDS) {
+    if (brandMap[brand]) matrixMap[brand] = brandMap[brand];
+  }
+
+  const otherEntries = Object.entries(brandMap).filter(([brand]) => !BRANDS.includes(brand));
+  if (otherEntries.length > 0) {
+    const aggregate = {
+      keyword: '其他',
+      pos: 0,
+      neu: 0,
+      neg: 0,
+      total: 0,
+      scores: [],
+      analyses: [],
+      itemAnalyses: [],
+      alerts: [],
+    };
+    for (const [, data] of otherEntries) {
+      aggregate.pos += data.pos || 0;
+      aggregate.neu += data.neu || 0;
+      aggregate.neg += data.neg || 0;
+      aggregate.total += data.total || 0;
+      aggregate.scores.push(...(data.scores || []));
+      aggregate.analyses.push(...(data.analyses || []));
+      aggregate.itemAnalyses.push(...(data.itemAnalyses || []));
+      aggregate.alerts.push(...(data.alerts || []));
+    }
+    matrixMap['其他'] = aggregate;
+  }
+
+  return matrixMap;
+}
+
 function renderBrandCards(brandMap) {
   const grid = document.getElementById('brand-grid');
   if (Object.keys(brandMap).length === 0) { grid.innerHTML = '<div class="loading">尚無品牌資料</div>'; return; }
+  const matrixMap = buildBrandMatrixMap(brandMap);
 
-  grid.innerHTML = BRANDS.map(brand => {
-    const b = brandMap[brand];
+  grid.innerHTML = BRAND_MATRIX_LABELS.map(brand => {
+    const b = matrixMap[brand];
     if (!b) return `<div class="brand-card"><div class="brand-name">${brand}</div><div style="font-size:11px;color:#94a3b8">今日無新訊號</div></div>`;
     const total = b.total || 1;
     const posW = Math.round(b.pos / total * 100);

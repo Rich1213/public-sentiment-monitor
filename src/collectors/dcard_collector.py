@@ -1,28 +1,21 @@
 """
-DcardCollector — Dcard 渠道採集器 v7（SSR 搜尋 + 雲端 WAF 繞過）
+DcardCollector — Dcard 渠道採集器 v8（ScraperAPI 單一路徑）
 
 策略：全站搜尋 SSR
   GET /search/posts?query={term}
   Next.js SSR 頁面，<article> 直接渲染在 HTML，BeautifulSoup 解析。
   多搜尋詞結果合併去重（by URL）。
 
-━━━ 雲端部署 WAF 繞過（二擇一）━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ 雲端部署 WAF 繞過（單一路徑）━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 Dcard 的 Cloudflare WAF 會在 IP 信譽層封鎖資料中心 IP（AWS/GCP/Azure）。
-curl_cffi TLS 指紋偽裝只能繞過指紋偵測，對 IP 封鎖無效。
-需在 .env 設定以下其中一個：
+直連與 residential proxy 已移除，現在固定只支援：
 
-【方案 A — Residential Proxy（推薦）】
-  DCARD_PROXY_URL=http://user:pass@proxy-host:port
-  支援任何 SOCKS5/HTTP residential proxy（IPRoyal、Smartproxy、Bright Data 等）
-  費用：~$3–10/GB，每日監控用量極低
-
-【方案 B — ScraperAPI（零設定）】
+【ScraperAPI】
   SCRAPERAPI_KEY=your_key_here
-  https://www.scraperapi.com — 免費 5,000 次/月，付費 $49/月起
-  會自動走 residential IP 並解 JS challenge
+  https://www.scraperapi.com — 由 ScraperAPI 代打 Dcard
 
-兩個都沒設定 → 直連（本機/台灣住宅 IP 可正常運作，雲端會 403）
+未設定 SCRAPERAPI_KEY → Dcard 採集停用，直接回傳 0 篇
 
 渠道識別：channel = "dcard"
 """
@@ -36,21 +29,9 @@ from typing import List, Dict, Optional
 from datetime import datetime
 
 from bs4 import BeautifulSoup
+import requests
 from src.utils.db_manager import SentimentDB
 from src.config.brands import get_search_query, is_brand_relevant
-
-try:
-    from curl_cffi import requests as cf_requests
-    USE_CURL_CFFI = True
-except ImportError:
-    import requests as cf_requests
-    USE_CURL_CFFI = False
-    print("⚠️  [Dcard] curl_cffi 未安裝，將使用標準 requests。"
-          "建議執行：pip install curl_cffi")
-
-# ── 注意：WAF 繞過設定改在 DcardCollector.__init__ 讀取 ──────────
-# 不再於模組頂層讀取 os.getenv，確保 load_dotenv() 在 import 之前
-# 執行的所有入口點（CLI / API / Cron）都能正確取得 .env 設定值。
 
 DCARD_SEARCH_URL    = "https://www.dcard.tw/search/posts"
 SCRAPERAPI_ENDPOINT = "https://api.scraperapi.com/"
@@ -74,26 +55,6 @@ ALLOWED_FORUMS = {
     "心情", "心情 forum",
 }
 
-BROWSER_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept":           "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language":  "zh-TW,zh;q=0.9,en-US;q=0.8",
-    "Accept-Encoding":  "gzip, deflate, br",
-    "sec-ch-ua":        '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-    "sec-ch-ua-mobile": "?0",
-    "sec-ch-ua-platform": '"macOS"',
-    "sec-fetch-dest":   "document",
-    "sec-fetch-mode":   "navigate",
-    "sec-fetch-site":   "none",
-    "sec-fetch-user":   "?1",
-    "upgrade-insecure-requests": "1",
-}
-
-
 class DcardCollector:
     CHANNEL     = "dcard"
     SOURCE_NAME = "Dcard"
@@ -102,107 +63,47 @@ class DcardCollector:
         self.keyword      = keyword
         self.db           = db
 
-        # ── WAF 繞過設定（在 instance 初始化時讀取，確保 load_dotenv 已執行）─
         self._scraperapi_key = os.getenv("SCRAPERAPI_KEY", "").strip()
-        self._proxy_url      = os.getenv("DCARD_PROXY_URL", "").strip()
-        # Dcard 在雲端環境對資料中心 IP 極敏感，Residential Proxy 優先級高於 ScraperAPI。
-        # 若兩者同時存在，優先走 residential proxy，避免 ScraperAPI 額度用完時整條線失效。
-        if self._proxy_url:
-            self._bypass_mode = "proxy"
-            host_port = self._proxy_url.split("@")[-1] if "@" in self._proxy_url else self._proxy_url
-            print(f"  [Dcard] 使用 Residential Proxy 模式（{host_port}）")
-        elif self._scraperapi_key:
+        if self._scraperapi_key:
             self._bypass_mode = "scraperapi"
             print("  [Dcard] 使用 ScraperAPI 模式（雲端 WAF 繞過）")
         else:
-            self._bypass_mode = "direct"
+            self._bypass_mode = "disabled"
+            print("  [Dcard] 未設定 SCRAPERAPI_KEY，Dcard 採集停用")
 
         self.search_query = get_search_query(keyword, "dcard")
         self.search_terms = [t.strip() for t in self.search_query.split(" OR ") if t.strip()]
-        self.session      = self._init_session()
+        try:
+            self._search_cache_minutes = max(0, int(os.getenv("DCARD_SEARCH_CACHE_MINUTES", "30")))
+        except ValueError:
+            self._search_cache_minutes = 30
 
-    def _init_session(self):
-        if USE_CURL_CFFI:
-            session = cf_requests.Session(impersonate="chrome124")
-        else:
-            import requests as req
-            session = req.Session()
-        session.headers.update(BROWSER_HEADERS)
+    def _search_cache_key(self) -> str:
+        return f"dcard_search:v1:{self.keyword}"
 
-        # Residential proxy：設定到 session
-        if self._bypass_mode == "proxy":
-            session.proxies = {
-                "http":  self._proxy_url,
-                "https": self._proxy_url,
-            }
-
-        # ScraperAPI 模式不需要暖機（直接走 API endpoint）
-        if self._bypass_mode != "scraperapi":
-            try:
-                session.get("https://www.dcard.tw/", timeout=15)
-                time.sleep(random.uniform(1.0, 2.0))
-            except Exception as e:
-                print(f"  [Dcard] 暖機請求失敗（非致命，繼續）：{e}")
-        return session
-
-    def _get(self, url: str, params: dict = None, headers: dict = None,
-             timeout: int = 20, force_direct: bool = False):
+    def _get(self, url: str, params: dict = None, headers: dict = None, timeout: int = 20):
         """
-        統一 GET 請求入口，依 _BYPASS_MODE 選擇路由：
-          - scraperapi：透過 ScraperAPI endpoint 轉發（HTML 頁用）
-          - proxy：session 已設定 proxy，直接發送
-          - direct：直連
-        force_direct=True 時強制直連（JSON API endpoint 適用）
+        統一 GET 請求入口：固定透過 ScraperAPI 轉發。
         """
-        if self._bypass_mode == "scraperapi" and not force_direct:
-            # ScraperAPI 把目標 URL 當參數傳入
-            target = url
-            if params:
-                target += ("&" if "?" in target else "?") + urllib.parse.urlencode(params)
-            # 不能走 curl_cffi session 打 ScraperAPI，否則會被 403。
-            return self._scraperapi_get_with_fallback(target, timeout=60)
-
-        resp = self.session.get(
-            url, params=params, headers=headers, timeout=timeout
-        )
-        if (
-            self._bypass_mode == "proxy"
-            and not force_direct
-            and resp.status_code == 403
-            and self._scraperapi_key
-        ):
-            target = url
-            if params:
-                target += ("&" if "?" in target else "?") + urllib.parse.urlencode(params)
-            print("  [Dcard] Residential proxy 403，改用 ScraperAPI 備援...")
-            return self._scraperapi_get_with_fallback(target, timeout=60)
-        return resp
+        if not self._scraperapi_key:
+            raise RuntimeError("SCRAPERAPI_KEY 未設定，Dcard 採集已停用")
+        target = url
+        if params:
+            target += ("&" if "?" in target else "?") + urllib.parse.urlencode(params)
+        return self._scraperapi_get(target, timeout=max(timeout, 60))
 
     def _delay(self):
         time.sleep(random.uniform(*REQUEST_DELAY))
 
     def _scraperapi_get(self, target_url: str, timeout: int = 60):
         """
-        透過 ScraperAPI 發送 GET 請求，使用裸 requests（不帶 curl_cffi browser headers）。
-        ScraperAPI 本身的 API endpoint 不需要 browser fingerprint，
-        curl_cffi session 的 TLS 指紋反而會導致 ScraperAPI 回傳 403。
+        透過 ScraperAPI 發送 GET 請求。
         """
-        import requests as _req
-        return _req.get(
+        return requests.get(
             SCRAPERAPI_ENDPOINT,
             params={"api_key": self._scraperapi_key, "url": target_url, "render": "false"},
             timeout=timeout,
         )
-
-    def _scraperapi_get_with_fallback(self, target_url: str, timeout: int = 60):
-        resp = self._scraperapi_get(target_url, timeout=timeout)
-        if resp.status_code == 403:
-            try:
-                print("  [Dcard] ScraperAPI 403，改用直連 fallback...")
-                return self.session.get(target_url, timeout=20)
-            except Exception:
-                return resp
-        return resp
 
     # ════════════════════════════════════════════════════════════
     # 策略一：全站搜尋 SSR
@@ -312,9 +213,11 @@ class DcardCollector:
     def _fetch_post_content(self, post_id: str) -> Dict:
         """
         透過 Dcard API v2 取得文章全文。
-        直連會被 Cloudflare 403，固定走 ScraperAPI（若無 key 則回傳空）。
+        固定走 ScraperAPI；若無 key 則回傳空。
         回傳：{ content, like_count, comment_count, forum, title, date_str }
         """
+        if not self._scraperapi_key:
+            return {}
         api_url = f"https://www.dcard.tw/service/api/v2/posts/{post_id}"
         try:
             self._delay()
@@ -411,7 +314,7 @@ class DcardCollector:
         透過 Dcard API v2 取得指定版板的最新貼文列表。
         端點：GET /service/api/v2/forums/{forum_id}/posts?limit=N
         回傳 metadata（含 post_id），不含全文（全文由 _fetch_post_content 補齊）。
-        需要 ScraperAPI 繞過 WAF；無 key 時直連（本機可用，雲端會 403）。
+        固定走 ScraperAPI；無 key 時停用。
         """
         api_url = f"https://www.dcard.tw/service/api/v2/forums/{forum_id}/posts"
         try:
@@ -461,59 +364,89 @@ class DcardCollector:
     def fetch_latest_posts(self, limit: int = 15, fresh_mode: bool = False) -> List[Dict]:
         terms_str = " / ".join(self.search_terms)
         print(f"  Fetching Dcard posts for keyword: {self.keyword}（搜尋詞：{terms_str}）...")
+        if not self._scraperapi_key:
+            print("  [Dcard] 未設定 SCRAPERAPI_KEY，跳過採集\n")
+            return []
 
         seen_urls: set = set()
         raw_posts: List[Dict] = []
+        cache_key = self._search_cache_key()
+        if not fresh_mode and self.db and self._search_cache_minutes > 0:
+            cached = self.db.get_collector_cache(cache_key)
+            if cached and isinstance(cached.get("raw_posts"), list):
+                raw_posts = cached["raw_posts"]
+                seen_urls = {p.get("post_url") for p in raw_posts if p.get("post_url")}
+                print(
+                    f"  [Dcard] 命中搜尋快取（{self._search_cache_minutes} 分鐘內）"
+                    f"：沿用 {len(raw_posts)} 篇候選文章"
+                )
 
-        # ── 策略一：版板置頂貼文（CVS + food，公開 API）──────────
-        # pinnedPosts 端點免登入，ScraperAPI 可直接存取。
-        # 置頂文是版板內最具代表性的討論，如員工勞資、品牌比較等。
-        from src.config.brands import get_brand_config
-        brand_cfg   = get_brand_config(self.keyword)
-        exclude_kws = brand_cfg.get("exclude_keywords", [])
+        if not raw_posts:
+            # ── 策略一：版板置頂貼文（CVS + food，公開 API）──────────
+            # pinnedPosts 端點免登入，ScraperAPI 可直接存取。
+            # 置頂文是版板內最具代表性的討論，如員工勞資、品牌比較等。
+            from src.config.brands import get_brand_config
+            brand_cfg   = get_brand_config(self.keyword)
+            exclude_kws = brand_cfg.get("exclude_keywords", [])
 
-        for forum_id in self.FORUM_API_BOARDS:
-            pinned = self._fetch_pinned_posts(forum_id)
-            added  = 0
-            for p in pinned:
-                if p["post_url"] in seen_urls:
-                    continue
-                combined = (p["title"] + " " + p["excerpt"]).lower()
-                if any(ex.lower() in combined for ex in exclude_kws):
-                    continue
-                # 置頂貼文不過期過濾（可能是幾個月前釘選的長期討論）
-                seen_urls.add(p["post_url"])
-                raw_posts.append(p)
-                added += 1
-            if added:
-                print(f"  [Dcard/pinned/{forum_id}] 新增 {added} 篇置頂")
-
-        # ── 策略二：全站搜尋 SSR（每個搜尋詞，不限版別）────────
-        # 注意：版板列表 API（/service/api/v2/forums/{id}/posts）需要登入 cookie，
-        # ScraperAPI 無法繞過（回傳 403）。全站搜尋 SSR 是唯一可用的公開路徑。
-        # 版白名單已移除 → 任何版（工作板、美食板等）的高互動貼文都會納入。
-        for term in self.search_terms:
-            posts = self._fetch_search_term(term, limit * 2)
-            added = 0
-            skipped_old = 0
-            for p in posts:
-                if p["post_url"] not in seen_urls:
-                    if not self._is_recent(p["date_str"], max_days=90):
-                        skipped_old += 1
+            for forum_id in self.FORUM_API_BOARDS:
+                pinned = self._fetch_pinned_posts(forum_id)
+                added  = 0
+                for p in pinned:
+                    if p["post_url"] in seen_urls:
                         continue
+                    combined = (p["title"] + " " + p["excerpt"]).lower()
+                    if any(ex.lower() in combined for ex in exclude_kws):
+                        continue
+                    # 置頂貼文不過期過濾（可能是幾個月前釘選的長期討論）
                     seen_urls.add(p["post_url"])
                     raw_posts.append(p)
                     added += 1
-            msg = f"  [Dcard/search/'{term}'] 新增 {added} 篇"
-            if skipped_old:
-                msg += f"（過濾舊文 {skipped_old} 篇）"
-            print(msg)
+                if added:
+                    print(f"  [Dcard/pinned/{forum_id}] 新增 {added} 篇置頂")
+
+            # ── 策略二：全站搜尋 SSR（每個搜尋詞，不限版別）────────
+            # 注意：版板列表 API（/service/api/v2/forums/{id}/posts）需要登入 cookie，
+            # ScraperAPI 無法繞過（回傳 403）。全站搜尋 SSR 是唯一可用的公開路徑。
+            # 版白名單已移除 → 任何版（工作板、美食板等）的高互動貼文都會納入。
+            for term in self.search_terms:
+                posts = self._fetch_search_term(term, limit * 2)
+                added = 0
+                skipped_old = 0
+                for p in posts:
+                    if p["post_url"] not in seen_urls:
+                        if not self._is_recent(p["date_str"], max_days=90):
+                            skipped_old += 1
+                            continue
+                        seen_urls.add(p["post_url"])
+                        raw_posts.append(p)
+                        added += 1
+                msg = f"  [Dcard/search/'{term}'] 新增 {added} 篇"
+                if skipped_old:
+                    msg += f"（過濾舊文 {skipped_old} 篇）"
+                print(msg)
+            if self.db and self._search_cache_minutes > 0 and raw_posts:
+                self.db.set_collector_cache(
+                    cache_key,
+                    {"raw_posts": raw_posts},
+                    ttl_minutes=self._search_cache_minutes,
+                )
 
         if not raw_posts:
             print("  → Dcard: 0 篇完成（WAF 封鎖或無結果）\n")
             return []
 
         print(f"  [Dcard] 合計 {len(raw_posts)} 篇（去重後）")
+
+        existing_urls = set()
+        if not fresh_mode and self.db:
+            existing_urls = self.db.get_existing_threads(
+                [post["post_url"] for post in raw_posts if post.get("post_url")]
+            )
+            if existing_urls and len(existing_urls) == len(raw_posts):
+                print(f"  [Dcard] 全部為舊文，略過全文抓取：{len(existing_urls)} 篇")
+                print("  → Dcard: 0 篇完成\n")
+                return []
 
         articles = []
         for post in raw_posts:
@@ -523,7 +456,7 @@ class DcardCollector:
             link    = post["post_url"]
             post_id = post["id"]
 
-            if not fresh_mode and self.db and self.db.is_duplicate(link):
+            if not fresh_mode and link in existing_urls:
                 print(f"  [Dcard] 跳過重複：{post['title'][:30]}")
                 continue
 
