@@ -353,6 +353,7 @@ const CH_COLORS = {
   google_news: 'linear-gradient(90deg, #a5b4fc, #6366f1)',
   ptt: 'linear-gradient(90deg, #6ee7b7, #10b981)',
   dcard: 'linear-gradient(90deg, #fdba74, #f97316)',
+  threads: 'linear-gradient(90deg, #94a3b8, #475569)',
   youtube: 'linear-gradient(90deg, #fb7185, #ef4444)',
 };
 const BRAND_COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6'];
@@ -418,7 +419,7 @@ function syncMonitorButton(activeBatch) {
 
 function processTodaySummary(today) {
   const brandMap = today.brand_map || {};
-  const channelCounts = today.channel_counts || { google_news: 0, ptt: 0, dcard: 0, youtube: 0 };
+  const channelCounts = today.channel_counts || { google_news: 0, ptt: 0, dcard: 0, youtube: 0, threads: 0 };
   allAlerts = (today.all_alerts || []).map(item => ({ ...item, score: normalizeScore(item.score) }));
   const totalArticles = today.total_articles || 0;
 
@@ -561,6 +562,7 @@ function getChannelIconSvg(channel) {
     google_news: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5A1.5 1.5 0 0 1 4.5 1h5A1.5 1.5 0 0 1 11 2.5V3h1.5A1.5 1.5 0 0 1 14 4.5v8a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 3 12.5V2.5Zm1 1V13h8.5a.5.5 0 0 0 .5-.5v-8a.5.5 0 0 0-.5-.5H11v.5A1.5 1.5 0 0 1 9.5 6h-4A1.5 1.5 0 0 1 4 4.5V3.5Zm1-.5v1.5a.5.5 0 0 0 .5.5h4a.5.5 0 0 0 .5-.5V2.5a.5.5 0 0 0-.5-.5h-4a.5.5 0 0 0-.5.5ZM5.5 8h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1 0-1Zm0 2h6a.5.5 0 0 1 0 1h-6a.5.5 0 0 1 0-1Z"/></svg>',
     ptt: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3A1.5 1.5 0 0 0 1 4.5v7A1.5 1.5 0 0 0 2.5 13H5l2.2 2.2c.5.5 1.3.15 1.3-.56V13h5A1.5 1.5 0 0 0 15 11.5v-7A1.5 1.5 0 0 0 13.5 3h-11Zm1.25 2h4a1.75 1.75 0 1 1 0 3.5H5.5V11H3.75V5Zm1.75 2h2a.25.25 0 0 0 0-.5h-2V7Zm4.5-1.5h3v1h-3v-1Zm0 2h3v1h-3v-1Zm0 2h2v1h-2v-1Z"/></svg>',
     dcard: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5A2.5 2.5 0 0 1 5.5 2h5A2.5 2.5 0 0 1 13 4.5v7a2.5 2.5 0 0 1-2.5 2.5h-5A2.5 2.5 0 0 1 3 11.5v-7Zm3.1 2.25a1.85 1.85 0 1 0 0 3.7H9.9a1.85 1.85 0 1 0 0-3.7H6.1Zm0 1a.85.85 0 1 1 0 1.7H9.9a.85.85 0 1 1 0-1.7H6.1Z"/></svg>',
+    threads: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8.1 1.5c2.8 0 4.9.8 6 2.1.7.9 1 2 1 3.1 0 2.1-1.2 3.6-3.5 4.3-.6 2.1-2.6 3.5-5.3 3.5-3.3 0-5.3-1.7-5.3-4.3 0-2.1 1.2-3.8 3.4-4.9.3-2.3 1.8-3.8 3.7-3.8Zm-.2 1.3c-1.1 0-2 .9-2.3 2.3l-.1.5-.4.2c-1.8.8-2.8 2.1-2.8 3.8 0 1.9 1.5 3.1 4 3.1 2.1 0 3.6-1 4-2.6l.1-.5.5-.1c2-.4 3-1.4 3-3.1 0-.8-.3-1.6-.8-2.3-.8-1-2.5-1.6-4.9-1.6Zm-.5 3.1c1.8 0 3 .8 3 2.1 0 1.5-1.4 2.6-3.5 2.6-.5 0-1-.1-1.4-.2l.2-1.1c.3.1.7.1 1.1.1 1.2 0 2-.5 2-1.2 0-.6-.7-1-1.8-1-.6 0-1.1.1-1.5.3l-.3-1c.6-.4 1.3-.6 2.2-.6Z"/></svg>',
     youtube: '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.9 4.7c-.2-.8-.8-1.4-1.6-1.6C10.9 2.8 8 2.8 8 2.8s-2.9 0-4.3.3c-.8.2-1.4.8-1.6 1.6C1.8 6.1 1.8 8 1.8 8s0 1.9.3 3.3c.2.8.8 1.4 1.6 1.6 1.4.3 4.3.3 4.3.3s2.9 0 4.3-.3c.8-.2 1.4-.8 1.6-1.6.3-1.4.3-3.3.3-3.3s0-1.9-.3-3.3ZM6.7 10.5v-5L10.9 8l-4.2 2.5Z"/></svg>',
   };
   return icons[channel] || '<svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/></svg>';
@@ -568,7 +570,7 @@ function getChannelIconSvg(channel) {
 
 function renderChannelBars(counts) {
   const total = Object.values(counts).reduce((a, b) => a + b, 0) || 1;
-  const labels = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', youtube: 'YouTube' };
+  const labels = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', threads: 'Threads', youtube: 'YouTube' };
   document.getElementById('channel-bars').innerHTML = Object.entries(counts).map(([ch, cnt]) => `
     <div class="ch-row">
       <span class="ch-label"><span class="ch-label-icon">${getChannelIconSvg(ch)}</span><span class="ch-label-text">${labels[ch]}</span></span>
@@ -600,7 +602,7 @@ function renderAlertTable(alerts) {
     <tbody>${alerts.slice(0, 20).map(a => {
       const sc = Math.round(a.score) || 1;
       const { cls, icon, label } = getArticleRiskBadge(sc);
-      const ch = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', youtube: 'YouTube' }[a.channel] || a.channel;
+      const ch = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', threads: 'Threads', youtube: 'YouTube' }[a.channel] || a.channel;
       const recentActivity = formatTimeLabel(a.recent_activity_at || a.published);
       const ongoingBadge = a.ongoing_days > 0
         ? `<div style="margin-top:6px"><span class="risk-pill risk-pill-medium" style="margin-top:0; font-size:12px; padding:4px 10px">議題延燒 ${a.ongoing_days} 天</span></div>`
@@ -628,7 +630,7 @@ function renderPRStrategy(brandMap) {
   const posPct = Math.round(primary.pos / total * 100);
   const avgScore = primary.scores.length > 0 ? (primary.scores.reduce((a, b) => a + b, 0) / primary.scores.length).toFixed(2) : '—';
   const highRiskCount = (primary.alerts || []).filter(a => a.score >= 4).length;
-  const spreadChannels = [...new Set((primary.alerts || []).map(a => ({ google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', youtube: 'YouTube' }[a.channel] || a.channel)))];
+  const spreadChannels = [...new Set((primary.alerts || []).map(a => ({ google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', threads: 'Threads', youtube: 'YouTube' }[a.channel] || a.channel)))];
 
   document.getElementById('track-reason').innerHTML = `
     <div style="margin-bottom:8px">

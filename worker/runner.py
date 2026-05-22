@@ -132,6 +132,7 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
     from src.collectors.google_news_collector import GoogleNewsCollector
     from src.collectors.ptt_collector import PTTCollector
     from src.collectors.dcard_collector import DcardCollector
+    from src.collectors.threads_collector import ThreadsCollector
     from src.collectors.youtube_collector import YouTubeCollector
     from src.analyzers.dashboard_narrator import DashboardNarrator
 
@@ -152,6 +153,7 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
             ("Google News", GoogleNewsCollector(keyword, db=db)),
             ("PTT",         PTTCollector(keyword, db=db)),
             ("Dcard",       DcardCollector(keyword, db=db)),
+            ("Threads",     ThreadsCollector(keyword, db=db)),
         ]
 
         # YouTube：有設 API key 才加入（避免未設定時報錯）
@@ -410,7 +412,7 @@ def run_all_brands(
         _print_banner()
         _print_env_diagnostic()
         print(f"\n  監控品牌：{', '.join(keywords)}")
-        print(f"  資料來源：Google News, PTT, Dcard")
+        print(f"  資料來源：Google News, PTT, Dcard, Threads")
         print(f"  採集上限：每渠道 {FETCH_LIMIT} 篇")
         print(f"  警報閾值：負面強度 ≥ {ALERT_THRESHOLD}")
         print(f"  重新採集：{'是（忽略去重）' if fresh_mode else '否（跳過已採集）'}")

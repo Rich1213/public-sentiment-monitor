@@ -9,7 +9,7 @@ brands.py — 品牌搜尋設定中心
 渠道架構（三層）：
   media  層：Google News（品牌敘事訊號）
   forum  層：PTT（真實民意）
-  social 層：Dcard（年輕族群）
+  social 層：Dcard / Threads（年輕族群與即時口碑）
 """
 
 from typing import Dict, List, Optional
@@ -51,11 +51,13 @@ BRANDS: Dict[str, dict] = {
             "ptt":         "7-11 OR 統一超商 OR 小七 OR 7ELEVEN OR 超商活蟲 OR 超商異物",
             "dcard":       "7-ELEVEN OR 統一超商 OR 小七 OR 711 OR 7-11",
             "youtube":     "7-ELEVEN 統一超商 OR 小七 OR 7-11超商 OR 超商 活蟲 OR 超商 異物",
+            "threads":     "7-ELEVEN OR 7-11 OR 小七 OR 7-ELEVEn Taiwan OR 7-11 店員 OR 7-11 新品",
         },
         "validation_keywords": [
             "7-eleven", "7-11", "7eleven", "711",
             "統一超商", "小七", "seven eleven",
         ],
+        "official_accounts": ["7eleventw"],
         "crisis_bypass": True,
         "exclude_keywords": _DCARD_EXCLUDE,
     },
@@ -67,6 +69,7 @@ BRANDS: Dict[str, dict] = {
             "ptt":         "全家便利 OR FamilyMart OR 全家超商 OR 全家超市 OR 超商活蟲 OR 超商異物",
             "dcard":       "全家便利 OR FamilyMart OR 全家超商 OR 全家便利店",
             "youtube":     "全家便利商店 OR FamilyMart台灣 OR 超商 活蟲 OR 超商 異物",
+            "threads":     "全家便利 OR FamilyMart OR 全家超商 OR 全家新品 OR 全家 店員",
         },
         "validation_keywords": [
             "全家便利", "familymart", "全家超商",
@@ -83,6 +86,7 @@ BRANDS: Dict[str, dict] = {
             "ptt":         "萊爾富 OR Hi-Life OR hilife OR 超商活蟲 OR 超商異物",
             "dcard":       "萊爾富 OR hilife OR hi-life",
             "youtube":     "萊爾富 Hi-Life便利商店 OR 超商 活蟲 OR 超商 異物",
+            "threads":     "萊爾富 OR Hi-Life OR hilife OR 萊爾富 新品 OR 萊爾富 店員",
         },
         "validation_keywords": [
             "萊爾富", "hi-life", "hilife", "hi life",
@@ -98,6 +102,7 @@ BRANDS: Dict[str, dict] = {
             "ptt":         "OK超商 OR OKmart OR OK mart OR OK便利 OR 超商活蟲 OR 超商異物",
             "dcard":       "OK mart OR OK超商 OR okmart",
             "youtube":     "OK mart OK超商 台灣 OR 超商 活蟲 OR 超商 異物",
+            "threads":     "OK mart OR OK超商 OR okmart OR OK mart 新品 OR OK超商 店員",
         },
         "validation_keywords": [
             "ok mart", "ok超商", "okmart", "ok便利", "來來超商",
@@ -114,6 +119,7 @@ BRANDS: Dict[str, dict] = {
             "ptt":         "超商食安 OR 超商異物 OR 超商蟲 OR 超商活蟲 OR 便利商店活蟲 OR 超商食物中毒",
             "dcard":       "超商食安 OR 超商異物 OR 超商食品問題",
             "youtube":     " OR ".join(GENERIC_CRISIS_TERMS),
+            "threads":     "超商 OR 超商新品 OR 超商美食 OR 超商 店員 OR 超商 食安",
         },
         "validation_keywords": [
             "超商", "便利商店", "7-11", "全家", "萊爾富", "ok mart",
@@ -133,12 +139,14 @@ CHANNEL_LAYER: Dict[str, str] = {
     "google_news": "media",   # 媒體層（品牌敘事訊號）
     "ptt":         "forum",   # 論壇層（真實民意）
     "dcard":       "social",  # 社群層（年輕族群）
+    "threads":     "social",  # 社群層（官方貼文 + 真實回饋）
 }
 
 CHANNEL_DISPLAY: Dict[str, str] = {
     "google_news": "Google News",
     "ptt":         "PTT",
     "dcard":       "Dcard",
+    "threads":     "Threads",
 }
 
 LAYER_DISPLAY: Dict[str, str] = {
@@ -160,7 +168,7 @@ def get_brand_config(keyword: str) -> dict:
             return config
     return {
         "display_name": keyword,
-        "search_queries": {ch: keyword for ch in ["google_news", "ptt", "dcard"]},
+        "search_queries": {ch: keyword for ch in ["google_news", "ptt", "dcard", "threads"]},
         "validation_keywords": [keyword.lower()],
         "exclude_keywords": [],
     }

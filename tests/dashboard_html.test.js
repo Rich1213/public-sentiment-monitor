@@ -10,6 +10,8 @@ test('channel coverage labels include monochrome inline SVG icons', () => {
   assert.match(html, /class="ch-label-text"/);
   assert.match(html, /class="ch-label-icon"/);
   assert.match(html, /viewBox="0 0 16 16"/);
+  assert.match(html, /threads:/);
+  assert.match(html, /Threads/);
 });
 
 test('brand matrix includes an aggregated 其他 slot for non-brand keywords', () => {

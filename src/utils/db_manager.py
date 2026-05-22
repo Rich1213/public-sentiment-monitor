@@ -48,6 +48,7 @@ DEFAULT_SOURCES = [
     ("Google News", "news",  1, 1.2, 10),
     ("PTT",         "forum", 1, 1.0, 10),
     ("Dcard",       "forum", 1, 0.9, 10),
+    ("Threads",     "social", 1, 0.9, 10),
 ]
 
 
@@ -1274,7 +1275,7 @@ class SentimentDB:
                 "updated_at": latest_completed_at,
                 "active_batch": active_batch,
                 "brand_map": {},
-                "channel_counts": {"google_news": 0, "ptt": 0, "dcard": 0, "youtube": 0},
+                "channel_counts": {"google_news": 0, "ptt": 0, "dcard": 0, "youtube": 0, "threads": 0},
                 "all_alerts": [],
                 "total_articles": 0,
                 "latest_run_at": latest_completed_at,
@@ -1355,7 +1356,7 @@ class SentimentDB:
                 pr_by_keyword[keyword] = row
 
         brand_map: Dict[str, Dict[str, Any]] = {}
-        channel_counts = {"google_news": 0, "ptt": 0, "dcard": 0, "youtube": 0}
+        channel_counts = {"google_news": 0, "ptt": 0, "dcard": 0, "youtube": 0, "threads": 0}
         seen_global_alerts = set()
         all_alerts: List[Dict[str, Any]] = []
 
@@ -1967,6 +1968,8 @@ class SentimentDB:
             source_name = "PTT"
         elif channel == "dcard":
             source_name = "Dcard"
+        elif channel == "threads":
+            source_name = "Threads"
         elif channel == "youtube":
             source_name = "YouTube"
         else:

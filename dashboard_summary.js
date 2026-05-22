@@ -11,6 +11,7 @@
     google_news: 'Google News',
     ptt: 'PTT',
     dcard: 'Dcard',
+    threads: 'Threads',
     youtube: 'YouTube',
   };
 

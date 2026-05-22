@@ -489,6 +489,22 @@ class DashboardTodayTest(unittest.TestCase):
         self.assertEqual(summary["channel_counts"]["ptt"], 1)
         self.assertIn("全家", summary["brand_map"])
 
+    def test_dashboard_day_summary_counts_threads_channel(self):
+        today = datetime.now().date().isoformat()
+        run_id = self.db.create_run("全家")
+        thread_id = self._seed_analysis(run_id, "全家", "https://www.threads.com/@plain_user/post/ABC123xyz", "全家新品有人討論", score=3)
+        self.db.close_run(run_id, articles_found=1, articles_new=1)
+        self._execute(
+            "UPDATE threads SET channel = ?, source_id = ?, published_at = ?, first_seen_at = ? WHERE id = ?",
+            ("threads", 4, f"{today}T11:20:00+08:00", f"{today}T11:20:00+08:00", thread_id),
+        )
+
+        summary = self.db.get_dashboard_day_summary(snapshot_date=today)
+
+        self.assertEqual(summary["total_articles"], 1)
+        self.assertEqual(summary["channel_counts"]["threads"], 1)
+        self.assertEqual(summary["all_alerts"][0]["channel"], "threads")
+
     def test_dashboard_day_summary_excludes_old_youtube_video_without_today_comment_activity(self):
         run_id = self.db.create_run("7-ELEVEN")
         thread_id = self._seed_analysis(
