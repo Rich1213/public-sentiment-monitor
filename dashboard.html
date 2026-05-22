@@ -5,26 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>台灣便利超商輿情監控儀表板</title>
 <link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #f1f5f9; color: #1e293b; min-height: 100vh; }
+  body { font-family: "Noto Sans TC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #eef2f6; color: #1e293b; min-height: 100vh; }
 
   /* ── Layout ── */
-  .app { max-width: 1280px; margin: 0 auto; padding: 20px; }
-  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-  .logo { display: flex; align-items: center; gap: 10px; }
-  .logo-icon { width: 32px; height: 32px; background: #7c3aed; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; }
-  .logo-text { font-size: 15px; font-weight: 600; color: #0f172a; }
-  .logo-sub { font-size: 11px; color: #94a3b8; margin-top: 1px; }
+  .app { max-width: 1320px; margin: 0 auto; padding: 24px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: #ffffff; border: 1px solid #dbe4ef; border-radius: 18px; margin-bottom: 18px; box-shadow: 0 8px 24px rgba(15,23,42,0.05); }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, #8b5cf6, #6d28d9); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; box-shadow: 0 8px 20px rgba(124,58,237,0.18); }
+  .logo-text { font-size: 18px; font-weight: 700; color: #0f172a; }
+  .logo-sub { font-size: 13px; color: #94a3b8; margin-top: 2px; }
   .topbar-right { display: flex; align-items: center; gap: 12px; }
   .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block; margin-right: 5px; animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
-  .status-text { font-size: 12px; color: #64748b; }
-  .last-update { font-size: 11px; color: #94a3b8; }
+  .status-text { font-size: 14px; color: #64748b; }
+  .last-update { font-size: 13px; color: #94a3b8; }
 
   /* ── Buttons ── */
-  .btn { padding: 7px 16px; border-radius: 8px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: all 0.15s; }
+  .btn { padding: 10px 18px; border-radius: 10px; border: none; cursor: pointer; font-size: 14px; font-weight: 700; transition: all 0.15s; }
   .btn-primary { background: #7c3aed; color: white; }
   .btn-primary:hover { background: #6d28d9; }
   .btn-primary:disabled { background: #ddd6fe; color: #a78bfa; cursor: not-allowed; }
@@ -32,37 +35,55 @@
   .btn-ghost:hover { background: #f1f5f9; }
 
   /* ── Floating refresh button (右下角) ── */
-  .btn-fab { position: fixed; bottom: 28px; right: 28px; width: 48px; height: 48px; border-radius: 50%; border: none; background: #7c3aed; color: white; cursor: pointer; font-size: 20px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 4px 14px rgba(124,58,237,0.4); transition: all 0.2s; z-index: 100; }
+  .btn-fab { position: fixed; bottom: 28px; right: 28px; width: 52px; height: 52px; border-radius: 50%; border: none; background: #7c3aed; color: white; cursor: pointer; font-size: 22px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; box-shadow: 0 10px 30px rgba(124,58,237,0.3); transition: all 0.2s; z-index: 100; }
   .btn-fab:hover { background: #6d28d9; box-shadow: 0 6px 20px rgba(124,58,237,0.5); transform: translateY(-2px); }
   .btn-fab:disabled { background: #a78bfa; box-shadow: none; cursor: not-allowed; transform: none; }
   .btn-fab-label { position: fixed; bottom: 82px; right: 24px; font-size: 11px; color: #64748b; background: #ffffff; border: 1px solid #e2e8f0; padding: 3px 8px; border-radius: 6px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); pointer-events: none; opacity: 0; transition: opacity 0.15s; z-index: 99; white-space: nowrap; }
   .btn-fab:hover + .btn-fab-label, .btn-fab:focus + .btn-fab-label { opacity: 1; }
 
   /* ── Grid ── */
-  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
-  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
-  #brand-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 16px; }
-  .grid-2 { display: grid; grid-template-columns: 3fr 2fr; gap: 12px; margin-bottom: 16px; }
-  .grid-2-eq { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 18px; }
+  .grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 18px; }
+  #brand-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 16px; margin-bottom: 18px; }
+  .grid-2 { display: grid; grid-template-columns: 3fr 2fr; gap: 16px; margin-bottom: 18px; }
+  .grid-2-eq { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 18px; }
 
   /* ── Cards ── */
-  .card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px 18px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
-  .card-title { font-size: 11px; font-weight: 500; color: #94a3b8; letter-spacing: 0.05em; text-transform: uppercase; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
-  .kpi-val { font-size: 28px; font-weight: 700; color: #0f172a; line-height: 1; }
-  .kpi-sub { font-size: 11px; color: #94a3b8; margin-top: 4px; }
-  .kpi-note { font-size: 11px; margin-top: 8px; font-weight: 600; }
-  .section-header { font-size: 13px; font-weight: 600; color: #64748b; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
-  .zone-badge { width: 20px; height: 20px; border-radius: 50%; background: #ede9fe; border: 1px solid #c4b5fd; font-size: 10px; font-weight: 600; display: inline-flex; align-items: center; justify-content: center; color: #7c3aed; }
+  .card { background: #ffffff; border: 1px solid #dbe4ef; border-radius: 18px; padding: 20px 22px; box-shadow: 0 8px 26px rgba(15,23,42,0.05); }
+  .card-title { font-size: 15px; font-weight: 700; color: #64748b; letter-spacing: 0.02em; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+  .kpi-hero { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-bottom: 18px; background:
+      radial-gradient(circle at 16% 120%, rgba(251,113,133,0.16), transparent 28%),
+      radial-gradient(circle at 52% 120%, rgba(129,140,248,0.14), transparent 28%),
+      radial-gradient(circle at 84% 120%, rgba(52,211,153,0.12), transparent 28%),
+      linear-gradient(180deg, #171a22 0%, #12151d 100%);
+    border: 1px solid rgba(30,41,59,0.08);
+    border-radius: 24px;
+    overflow: hidden;
+    box-shadow: 0 18px 38px rgba(15,23,42,0.14);
+  }
+  .kpi-card { padding: 24px 26px 22px; min-height: 198px; position: relative; }
+  .kpi-card + .kpi-card::before { content: ""; position: absolute; left: 0; top: 26px; bottom: 26px; width: 1px; background: linear-gradient(180deg, transparent, rgba(226,232,240,0.35), transparent); }
+  .kpi-card .card-title { color: rgba(226,232,240,0.72); margin-bottom: 14px; }
+  .kpi-val { font-size: 24px; font-weight: 700; color: #0f172a; line-height: 1; }
+  .kpi-main { display: flex; align-items: flex-end; gap: 8px; margin-top: 2px; }
+  .kpi-number { font-family: "Bebas Neue", sans-serif; font-size: 74px; line-height: 0.9; letter-spacing: 0.02em; color: #f8fafc; }
+  .kpi-denominator { font-size: 24px; font-weight: 700; color: rgba(226,232,240,0.72); line-height: 1.2; margin-bottom: 8px; }
+  .kpi-brand-name { font-size: 40px; font-weight: 900; line-height: 1; letter-spacing: -0.03em; color: #f8fafc; margin-top: 6px; }
+  .kpi-sub { font-size: 16px; color: #94a3b8; margin-top: 10px; line-height: 1.6; }
+  .kpi-card .kpi-sub { color: rgba(203,213,225,0.74); }
+  .kpi-note { font-size: 15px; margin-top: 14px; font-weight: 700; }
+  .section-header { font-size: 16px; font-weight: 700; color: #64748b; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+  .zone-badge { width: 24px; height: 24px; border-radius: 50%; background: #f3e8ff; border: 1px solid #d8b4fe; font-size: 12px; font-weight: 700; display: inline-flex; align-items: center; justify-content: center; color: #7c3aed; }
 
   /* ── Hero 今日論述 ── */
-  .hero-card { background: #ffffff; border: 1px solid #ddd6fe; border-left: 4px solid #7c3aed; border-radius: 12px; padding: 16px 20px; margin-bottom: 16px; box-shadow: 0 1px 4px rgba(124,58,237,0.07); }
+  .hero-card { background: #ffffff; border: 1px solid #ddd6fe; border-left: 4px solid #7c3aed; border-radius: 18px; padding: 18px 22px; margin-bottom: 18px; box-shadow: 0 8px 24px rgba(124,58,237,0.06); }
   .hero-card .card-title { color: #7c3aed; }
-  .narrative-text { font-size: 13.5px; color: #374151; line-height: 1.85; }
+  .narrative-text { font-size: 16px; color: #374151; line-height: 1.9; }
 
   /* ── Help tooltip ── */
-  .help-tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 999px; border: 1px solid #e2e8f0; background: #f8fafc; color: #94a3b8; font-size: 10px; font-weight: 700; line-height: 1; cursor: help; flex-shrink: 0; }
+  .help-tip { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 999px; border: 1px solid #d8e0ea; background: #f8fafc; color: #94a3b8; font-size: 11px; font-weight: 700; line-height: 1; cursor: help; flex-shrink: 0; }
   .help-tip:hover { color: #475569; border-color: #94a3b8; }
-  .help-tip::after { content: attr(data-tip); position: absolute; top: calc(100% + 8px); right: 0; width: 220px; padding: 8px 10px; border-radius: 8px; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; font-size: 11px; font-weight: 500; letter-spacing: 0; line-height: 1.5; text-transform: none; white-space: normal; box-shadow: 0 10px 30px rgba(0,0,0,0.15); opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity 0.15s ease, transform 0.15s ease; z-index: 20; }
+  .help-tip::after { content: attr(data-tip); position: absolute; top: calc(100% + 8px); right: 0; width: 240px; padding: 10px 12px; border-radius: 10px; background: #1e293b; border: 1px solid #334155; color: #e2e8f0; font-size: 12px; font-weight: 500; letter-spacing: 0; line-height: 1.6; text-transform: none; white-space: normal; box-shadow: 0 10px 30px rgba(0,0,0,0.15); opacity: 0; pointer-events: none; transform: translateY(-4px); transition: opacity 0.15s ease, transform 0.15s ease; z-index: 20; }
   .help-tip:hover::after { opacity: 1; transform: translateY(0); }
   .help-tip-right { margin-left: auto; }
 
@@ -72,7 +93,7 @@
   .risk-high { color: #ea580c; }
   .risk-danger { color: #dc2626; }
   .risk-muted { color: #94a3b8; }
-  .risk-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid #e2e8f0; font-size: 11px; font-weight: 700; margin-top: 10px; }
+  .risk-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; border: 1px solid #e2e8f0; font-size: 13px; font-weight: 700; margin-top: 10px; }
   .risk-pill-low { background: #d1fae5; color: #065f46; border-color: #6ee7b7; }
   .risk-pill-medium { background: #fef3c7; color: #92400e; border-color: #fcd34d; }
   .risk-pill-high { background: #ffedd5; color: #9a3412; border-color: #fdba74; }
@@ -80,68 +101,68 @@
   .risk-pill-muted { background: #f1f5f9; color: #64748b; border-color: #cbd5e1; }
 
   /* ── Brand cards ── */
-  .brand-card { background: #ffffff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.04); transition: border-color 0.15s, box-shadow 0.15s; }
-  .brand-card:hover { border-color: #c4b5fd; box-shadow: 0 2px 8px rgba(124,58,237,0.08); }
-  .brand-name { font-size: 13px; font-weight: 600; color: #0f172a; margin-bottom: 8px; }
-  .sentiment-bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 8px 0; gap: 2px; }
-  .bar-pos { background: #10b981; border-radius: 5px; }
-  .bar-neu { background: #cbd5e1; border-radius: 5px; }
-  .bar-neg { background: #f87171; border-radius: 5px; }
-  .sentiment-nums { display: flex; justify-content: space-between; font-size: 11px; }
+  .brand-card { background: #ffffff; border: 1px solid #dbe4ef; border-radius: 16px; padding: 18px; box-shadow: 0 8px 24px rgba(15,23,42,0.04); transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s; }
+  .brand-card:hover { border-color: #c4b5fd; box-shadow: 0 14px 30px rgba(124,58,237,0.08); transform: translateY(-1px); }
+  .brand-name { font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 12px; }
+  .sentiment-bar { display: flex; height: 16px; border-radius: 999px; overflow: hidden; margin: 12px 0 10px; gap: 3px; }
+  .bar-pos { background: linear-gradient(90deg, #34d399, #10b981); border-radius: 999px; }
+  .bar-neu { background: linear-gradient(90deg, #cbd5e1, #94a3b8); border-radius: 999px; }
+  .bar-neg { background: linear-gradient(90deg, #fb7185, #ef4444); border-radius: 999px; }
+  .sentiment-nums { display: flex; justify-content: space-between; font-size: 14px; font-weight: 700; }
   .pos { color: #059669; }
   .neu { color: #94a3b8; }
   .neg { color: #ef4444; }
-  .brand-tag { display: inline-block; font-size: 10px; padding: 2px 8px; border-radius: 4px; margin-top: 6px; font-weight: 500; }
+  .brand-tag { display: inline-block; font-size: 12px; padding: 4px 10px; border-radius: 999px; margin-top: 10px; font-weight: 700; }
   .tag-danger { background: #fee2e2; color: #991b1b; }
   .tag-success { background: #d1fae5; color: #065f46; }
   .tag-neutral { background: #f1f5f9; color: #64748b; }
 
   /* ── Alert table ── */
-  .alert-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  .alert-table th { text-align: left; padding: 8px 10px; color: #94a3b8; font-weight: 500; border-bottom: 1px solid #f1f5f9; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; background: #fafafa; }
-  .alert-table td { padding: 10px; border-bottom: 1px solid #f1f5f9; color: #475569; vertical-align: middle; }
-  .alert-table tr:hover td { background: #faf5ff; }
-  .score-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 6px; font-weight: 700; font-size: 12px; white-space: nowrap; }
+  .alert-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .alert-table th { text-align: left; padding: 12px; color: #94a3b8; font-weight: 700; border-bottom: 1px solid #e5edf5; font-size: 12px; letter-spacing: 0.08em; background: #fafbfd; }
+  .alert-table td { padding: 14px 12px; border-bottom: 1px solid #eef2f7; color: #475569; vertical-align: middle; line-height: 1.6; }
+  .alert-table tr:hover td { background: #fcfaff; }
+  .score-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 8px; font-weight: 700; font-size: 13px; white-space: nowrap; }
   .score-5 { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
   .score-4 { background: #ffedd5; color: #9a3412; border: 1px solid #fdba74; }
   .score-3 { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
   .score-2 { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
   .score-1 { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
-  .ch-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; background: #ede9fe; color: #7c3aed; border: 1px solid #c4b5fd; }
-  .article-link { color: #7c3aed; text-decoration: none; font-weight: 500; }
+  .ch-badge { display: inline-block; padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #f3e8ff; color: #7c3aed; border: 1px solid #d8b4fe; }
+  .article-link { color: #5b21b6; text-decoration: none; font-weight: 700; }
   .article-link:hover { color: #6d28d9; text-decoration: underline; }
 
   /* ── Narrative / PR box ── */
-  .pr-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; }
-  .pr-content { font-size: 12px; color: #475569; line-height: 1.7; white-space: pre-wrap; }
-  .pr-expand-btn { margin-top: 8px; font-size: 11px; color: #7c3aed; background: none; border: none; cursor: pointer; padding: 0; font-weight: 500; }
+  .pr-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 14px; padding: 16px 18px; }
+  .pr-content { font-size: 14px; color: #475569; line-height: 1.9; white-space: pre-wrap; }
+  .pr-expand-btn { margin-top: 8px; font-size: 13px; color: #7c3aed; background: none; border: none; cursor: pointer; padding: 0; font-weight: 700; }
   .pr-expand-btn:hover { text-decoration: underline; }
 
   /* ── Filter tabs ── */
   .filter-tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
-  .tab { padding: 5px 14px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1.5px solid #cbd5e1; background: #ffffff; color: #374151; transition: all 0.15s; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .tab { padding: 8px 16px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; border: 1.5px solid #cbd5e1; background: #ffffff; color: #374151; transition: all 0.15s; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
   .tab:hover { border-color: #7c3aed; color: #7c3aed; background: #faf5ff; }
   .tab.active { background: #7c3aed; color: white; border-color: #7c3aed; box-shadow: 0 2px 6px rgba(124,58,237,0.25); }
 
   /* ── Empty state ── */
   .empty { text-align: center; padding: 40px 20px; color: #94a3b8; }
   .empty-icon { font-size: 32px; margin-bottom: 10px; }
-  .empty-text { font-size: 13px; }
+  .empty-text { font-size: 15px; }
 
   /* ── Loading ── */
-  .loading { text-align: center; padding: 30px; color: #94a3b8; font-size: 13px; }
+  .loading { text-align: center; padding: 30px; color: #94a3b8; font-size: 15px; }
   .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #e2e8f0; border-top-color: #7c3aed; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 8px; vertical-align: middle; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* ── Channel coverage ── */
-  .ch-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
-  .ch-label { font-size: 12px; color: #64748b; width: 120px; flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; }
-  .ch-label-icon { width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; color: #94a3b8; flex-shrink: 0; }
-  .ch-label-icon svg { width: 14px; height: 14px; display: block; fill: currentColor; }
+  .ch-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .ch-label { font-size: 15px; color: #475569; width: 136px; flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; font-weight: 700; }
+  .ch-label-icon { width: 16px; height: 16px; display: inline-flex; align-items: center; justify-content: center; color: #94a3b8; flex-shrink: 0; }
+  .ch-label-icon svg { width: 16px; height: 16px; display: block; fill: currentColor; }
   .ch-label-text { display: inline-block; }
-  .ch-bar-wrap { flex: 1; height: 8px; background: #f1f5f9; border-radius: 4px; overflow: hidden; }
-  .ch-bar-fill { height: 100%; border-radius: 4px; transition: width 0.6s ease; }
-  .ch-count { font-size: 11px; color: #94a3b8; width: 28px; text-align: right; }
+  .ch-bar-wrap { flex: 1; height: 16px; background: #edf2f7; border-radius: 999px; overflow: hidden; }
+  .ch-bar-fill { height: 100%; border-radius: 999px; transition: width 0.6s ease; }
+  .ch-count { font-size: 14px; color: #94a3b8; width: 32px; text-align: right; font-weight: 700; }
 
   /* ── 採集進度列（subtle banner） ── */
   #monitor-progress { margin-bottom: 12px; }
@@ -154,6 +175,10 @@
   @media (max-width: 1100px) {
     .grid-4 { grid-template-columns: repeat(2, 1fr); }
     #brand-grid { grid-template-columns: repeat(2, 1fr); }
+    .kpi-hero { grid-template-columns: 1fr; }
+    .kpi-card + .kpi-card::before { display: none; }
+    .kpi-card { border-top: 1px solid rgba(226,232,240,0.14); }
+    .kpi-card:first-child { border-top: none; }
   }
   @media (max-width: 900px) {
     .grid-3 { grid-template-columns: 1fr 1fr; }
@@ -164,6 +189,12 @@
     .grid-3 { grid-template-columns: 1fr; }
     .grid-4 { grid-template-columns: 1fr; }
     #brand-grid { grid-template-columns: 1fr; }
+    .app { padding: 16px; }
+    .topbar { padding: 14px 16px; align-items: flex-start; gap: 10px; }
+    .topbar-right { flex-direction: column; align-items: flex-end; }
+    .kpi-card { padding: 20px; min-height: 0; }
+    .kpi-number { font-size: 62px; }
+    .kpi-brand-name { font-size: 32px; }
   }
 </style>
 </head>
@@ -191,15 +222,15 @@
       <div class="progress-inner">
         <div style="display:flex; align-items:center; gap:10px">
           <span class="spinner" style="width:14px;height:14px;border-width:2px"></span>
-          <span style="font-size:12px; font-weight:600; color:#374151">資料更新中</span>
-          <span id="progress-brand-tag" style="font-size:11px; background:#ede9fe; color:#7c3aed; padding:2px 8px; border-radius:4px; border:1px solid #c4b5fd">—</span>
+          <span style="font-size:14px; font-weight:700; color:#374151">資料更新中</span>
+          <span id="progress-brand-tag" style="font-size:12px; background:#ede9fe; color:#7c3aed; padding:3px 10px; border-radius:999px; border:1px solid #c4b5fd">—</span>
         </div>
-        <span id="progress-count" style="font-size:11px; color:#94a3b8">同步中</span>
+        <span id="progress-count" style="font-size:12px; color:#94a3b8">同步中</span>
       </div>
       <div class="progress-track">
         <div id="progress-bar"></div>
       </div>
-      <div id="progress-status" style="font-size:11px; color:#94a3b8; margin-top:6px">等待背景更新啟動...</div>
+      <div id="progress-status" style="font-size:12px; color:#94a3b8; margin-top:8px">等待背景更新啟動...</div>
     </div>
   </div>
 
@@ -211,21 +242,21 @@
 
   <!-- ── Zone 1: KPI Bar ── -->
   <div style="margin-bottom:6px" class="section-header"><span class="zone-badge">1</span> 今日概況</div>
-  <div class="grid-3" id="kpi-grid">
-    <div class="card">
+  <div class="kpi-hero" id="kpi-grid">
+    <div class="kpi-card">
       <div class="card-title">公關風險警報 <span class="help-tip help-tip-right" data-tip="綜合主品牌負面強度、負面數量與高風險事件後的分數。分數越高，越需要優先處理。">?</span></div>
-      <div class="kpi-val" id="kpi-alerts">—</div>
+      <div class="kpi-main"><span class="kpi-number" id="kpi-alerts-main">—</span><span class="kpi-denominator" id="kpi-alerts-denominator">/100</span></div>
       <div class="kpi-sub" id="kpi-alert-sub">主品牌綜合風險分數</div>
       <div class="kpi-note" id="kpi-alert-note">—</div>
     </div>
-    <div class="card">
+    <div class="kpi-card">
       <div class="card-title">分析文章數</div>
-      <div class="kpi-val" id="kpi-articles">—</div>
+      <div class="kpi-main"><span class="kpi-number" id="kpi-articles">—</span></div>
       <div class="kpi-sub">今日累積</div>
     </div>
-    <div class="card">
+    <div class="kpi-card">
       <div class="card-title">主目標品牌</div>
-      <div class="kpi-val" style="font-size:18px; margin-top:4px" id="kpi-brand">7-ELEVEN</div>
+      <div class="kpi-brand-name" id="kpi-brand">7-ELEVEN</div>
       <div class="kpi-sub" id="kpi-sentiment-avg">平均情緒強度 —</div>
     </div>
   </div>
@@ -240,10 +271,10 @@
     <div class="card">
       <div class="card-title">7 日負面占比趨勢 <span class="help-tip help-tip-right" data-tip="各品牌每日負面文章占當日總文章數的比例，用來看負面情緒是否正在升高或擴散。">?</span></div>
       <div style="display:flex; flex-wrap:wrap; gap:12px; margin-bottom:10px;">
-        <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#374151;"><span style="display:inline-block;width:20px;height:3px;background:#818cf8;border-radius:2px;"></span>7-ELEVEN</span>
-        <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#374151;"><span style="display:inline-block;width:20px;height:3px;background:#34d399;border-radius:2px;"></span>全家</span>
-        <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#374151;"><span style="display:inline-block;width:20px;height:3px;background:#fb923c;border-radius:2px;"></span>萊爾富</span>
-        <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#374151;"><span style="display:inline-block;width:20px;height:3px;background:#f472b6;border-radius:2px;"></span>OK mart</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#475569;"><span style="display:inline-block;width:24px;height:4px;background:#818cf8;border-radius:999px;"></span>7-ELEVEN</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#475569;"><span style="display:inline-block;width:24px;height:4px;background:#34d399;border-radius:999px;"></span>全家</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#475569;"><span style="display:inline-block;width:24px;height:4px;background:#fb923c;border-radius:999px;"></span>萊爾富</span>
+        <span style="display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:#475569;"><span style="display:inline-block;width:24px;height:4px;background:#f472b6;border-radius:999px;"></span>OK mart</span>
       </div>
       <div style="position:relative; height:220px">
         <canvas id="trend-chart"></canvas>
@@ -268,7 +299,7 @@
         <button class="tab" onclick="filterAlerts('萊爾富', this)">萊爾富</button>
         <button class="tab" onclick="filterAlerts('OK mart', this)">OK mart</button>
       </div>
-      <span style="font-size:11px; color:#94a3b8" id="alert-count-label"></span>
+      <span style="font-size:13px; color:#94a3b8" id="alert-count-label"></span>
     </div>
     <div id="alert-table-wrap">
       <div class="loading"><span class="spinner"></span>載入中</div>
@@ -280,7 +311,7 @@
   <div class="grid-2-eq">
     <div class="card">
       <div class="card-title">風險構成</div>
-      <div id="track-reason" style="font-size:12px; color:#475569; line-height:1.7">—</div>
+      <div id="track-reason" style="font-size:14px; color:#475569; line-height:1.85">—</div>
     </div>
     <div class="card">
       <div class="card-title">延伸說明</div>
@@ -295,13 +326,13 @@
     <div style="display:flex;align-items:center;gap:10px;">
       <div style="width:26px;height:26px;background:#7c3aed;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:13px;">📊</div>
       <div>
-        <div style="font-size:12px;font-weight:600;color:#374151;">Mediadrive 輿情監控系統</div>
-        <div style="font-size:10px;color:#94a3b8;margin-top:1px;">Public Sentiment Monitor · Taiwan CVS Intelligence</div>
+        <div style="font-size:14px;font-weight:700;color:#374151;">Mediadrive 輿情監控系統</div>
+        <div style="font-size:12px;color:#94a3b8;margin-top:2px;">Public Sentiment Monitor · Taiwan CVS Intelligence</div>
       </div>
     </div>
     <div style="text-align:right;">
-      <div style="font-size:11px;color:#94a3b8;">© 2025 Mediadrive. All rights reserved.</div>
-      <div style="font-size:10px;color:#cbd5e1;margin-top:2px;">資料來源：Google News · PTT · Dcard · YouTube</div>
+      <div style="font-size:12px;color:#94a3b8;">© 2025 Mediadrive. All rights reserved.</div>
+      <div style="font-size:11px;color:#cbd5e1;margin-top:3px;">資料來源：Google News · PTT · Dcard · YouTube</div>
     </div>
   </div>
 
@@ -318,7 +349,12 @@ const API = new URLSearchParams(window.location.search).get('api')
   || 'https://web-production-7a3df.up.railway.app';
 const BRANDS = ['7-ELEVEN', '全家', '萊爾富', 'OK mart'];
 const BRAND_MATRIX_LABELS = ['7-ELEVEN', '全家', '萊爾富', 'OK mart', '其他'];
-const CH_COLORS = { google_news: '#818cf8', ptt: '#34d399', dcard: '#fb923c', youtube: '#f87171' };
+const CH_COLORS = {
+  google_news: 'linear-gradient(90deg, #a5b4fc, #6366f1)',
+  ptt: 'linear-gradient(90deg, #6ee7b7, #10b981)',
+  dcard: 'linear-gradient(90deg, #fdba74, #f97316)',
+  youtube: 'linear-gradient(90deg, #fb7185, #ef4444)',
+};
 const BRAND_COLORS = ['#818cf8', '#34d399', '#fb923c', '#f472b6'];
 const { normalizeScore, buildPrimarySummary, getArticleRiskBadge, deriveProgressState, inferBatchStart, summarizeCommentInsights } = window.DashboardSummary;
 
@@ -399,12 +435,13 @@ function renderKPIs(brandMap, totalAlerts, totalArticles) {
   const marketContext = brandMap['超商食安'] || null;
   const summary = buildPrimarySummary(primary || null, marketContext);
 
-  document.getElementById('kpi-alerts').textContent = `${summary.riskScore}/100`;
-  document.getElementById('kpi-alerts').className = `kpi-val risk-${summary.colorToken}`;
+  document.getElementById('kpi-alerts-main').textContent = summary.riskScore;
+  document.getElementById('kpi-alerts-main').className = `kpi-number risk-${summary.colorToken}`;
   document.getElementById('kpi-alert-note').textContent = summary.note;
   document.getElementById('kpi-alert-note').className = `kpi-note risk-${summary.colorToken}`;
   document.getElementById('kpi-narrative').textContent = summary.narrative;
   document.getElementById('kpi-articles').textContent = totalArticles;
+  document.getElementById('kpi-brand').textContent = primary?.keyword || '—';
 
   if (primary && primary.scores.length > 0) {
     const avg = (primary.scores.reduce((a, b) => a + b, 0) / primary.scores.length).toFixed(2);
@@ -454,7 +491,7 @@ function renderBrandCards(brandMap) {
 
   grid.innerHTML = BRAND_MATRIX_LABELS.map(brand => {
     const b = matrixMap[brand];
-    if (!b) return `<div class="brand-card"><div class="brand-name">${brand}</div><div style="font-size:11px;color:#94a3b8">今日無新訊號</div></div>`;
+    if (!b) return `<div class="brand-card"><div class="brand-name">${brand}</div><div style="font-size:14px;color:#94a3b8;line-height:1.7">今日無新訊號</div></div>`;
     const total = b.total || 1;
     const posW = Math.round(b.pos / total * 100);
     const neuW = Math.round(b.neu / total * 100);
@@ -493,7 +530,9 @@ function renderTrend(trendData) {
         borderColor: BRAND_COLORS[i],
         backgroundColor: 'transparent',
         tension: 0.3,
+        borderWidth: 3,
         pointRadius: 4,
+        pointHoverRadius: 5,
         spanGaps: true,
       }))
     },
@@ -501,17 +540,17 @@ function renderTrend(trendData) {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { ticks: { color: '#94a3b8', font: { size: 10 } }, grid: { color: '#f1f5f9' } },
+        x: { ticks: { color: '#94a3b8', font: { size: 12, weight: '600' } }, grid: { color: '#edf2f7' } },
         y: {
           min: 0,
           max: 100,
           ticks: {
             color: '#94a3b8',
-            font: { size: 10 },
+            font: { size: 12, weight: '600' },
             stepSize: 20,
             callback: value => `${value}%`
           },
-          grid: { color: '#f1f5f9' }
+          grid: { color: '#edf2f7' }
         }
       }
     }
@@ -565,7 +604,7 @@ function renderAlertTable(alerts) {
       const ch = { google_news: 'Google News', ptt: 'PTT', dcard: 'Dcard', youtube: 'YouTube' }[a.channel] || a.channel;
       const recentActivity = formatTimeLabel(a.recent_activity_at || a.published);
       const ongoingBadge = a.ongoing_days > 0
-        ? `<div style="margin-top:4px"><span class="risk-pill risk-pill-medium" style="margin-top:0; font-size:10px; padding:2px 8px">議題延燒 ${a.ongoing_days} 天</span></div>`
+        ? `<div style="margin-top:6px"><span class="risk-pill risk-pill-medium" style="margin-top:0; font-size:12px; padding:4px 10px">議題延燒 ${a.ongoing_days} 天</span></div>`
         : '';
       return `<tr>
         <td style="color:#0f172a; font-weight:500">${a.brand}</td>
@@ -602,7 +641,7 @@ function renderPRStrategy(brandMap) {
     <div style="margin-bottom:4px"><span style="color:#94a3b8">平均強度</span> <span style="color:#1e293b">${avgScore}</span></div>
     <div style="margin-bottom:4px"><span style="color:#94a3b8">高風險文章</span> <span style="color:#ea580c">${highRiskCount} 篇</span></div>
     <div style="margin-bottom:4px"><span style="color:#94a3b8">擴散渠道</span> <span style="color:#1e293b">${spreadChannels.length > 0 ? spreadChannels.join('、') : '—'}</span></div>
-    <div style="margin-top:10px; font-size:11px; color:#94a3b8">
+    <div style="margin-top:12px; font-size:13px; color:#94a3b8; line-height:1.7">
       ${summary.note}
     </div>`;
 
@@ -628,10 +667,10 @@ function showEmptyState(today) {
   const hint = latestRun
     ? `今日尚無新訊號 · 最近一次採集：${latestRun}`
     : '點右上角 ↻ 執行第一次採集';
-  document.getElementById('brand-grid').innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📭</div><div class="empty-text">${hint}<br><span style="font-size:11px;color:#94a3b8;margin-top:6px;display:block">${snapshotSummary}</span></div></div>`;
+  document.getElementById('brand-grid').innerHTML = `<div class="empty" style="grid-column:1/-1"><div class="empty-icon">📭</div><div class="empty-text">${hint}<br><span style="font-size:13px;color:#94a3b8;margin-top:8px;display:block">${snapshotSummary}</span></div></div>`;
   document.getElementById('alert-table-wrap').innerHTML = `<div class="empty"><div class="empty-icon">✓</div><div class="empty-text">今日尚無需要處理的高強度負面議題</div></div>`;
-  document.getElementById('channel-bars').innerHTML = `<div style="color:#94a3b8;font-size:12px;padding:20px 0">${snapshotSummary}</div>`;
-  ['kpi-alerts','kpi-articles'].forEach(id => document.getElementById(id).textContent = '0');
+  document.getElementById('channel-bars').innerHTML = `<div style="color:#94a3b8;font-size:14px;padding:20px 0">${snapshotSummary}</div>`;
+  ['kpi-alerts-main','kpi-articles'].forEach(id => document.getElementById(id).textContent = '0');
   document.getElementById('kpi-narrative').textContent = hint;
   document.getElementById('kpi-alert-note').textContent = latestRun ? '今日暫無危機訊號' : '等待更多資料';
   document.getElementById('status-label').textContent = latestRun ? 'API 正常 · 今日無新訊號' : 'API 正常 · 無資料';
