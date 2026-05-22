@@ -35,3 +35,8 @@ test('dashboard readability improvements enlarge table text and use thicker grad
   assert.match(html, /linear-gradient\(90deg,\s*#34d399,\s*#10b981\)/);
   assert.match(html, /linear-gradient\(90deg,\s*#fb7185,\s*#ef4444\)/);
 });
+
+test('main target brand KPI remains static and is not reassigned from runtime brand data', () => {
+  assert.match(html, /id="kpi-brand">7-ELEVEN<\/div>/);
+  assert.doesNotMatch(html, /document\.getElementById\('kpi-brand'\)\.textContent\s*=/);
+});

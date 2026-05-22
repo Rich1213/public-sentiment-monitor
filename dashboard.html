@@ -441,7 +441,6 @@ function renderKPIs(brandMap, totalAlerts, totalArticles) {
   document.getElementById('kpi-alert-note').className = `kpi-note risk-${summary.colorToken}`;
   document.getElementById('kpi-narrative').textContent = summary.narrative;
   document.getElementById('kpi-articles').textContent = totalArticles;
-  document.getElementById('kpi-brand').textContent = primary?.keyword || '—';
 
   if (primary && primary.scores.length > 0) {
     const avg = (primary.scores.reduce((a, b) => a + b, 0) / primary.scores.length).toFixed(2);
