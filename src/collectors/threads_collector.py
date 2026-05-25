@@ -14,7 +14,7 @@ import os
 import re
 import html
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 import requests
@@ -42,6 +42,10 @@ class ThreadsCollector:
             self._search_cache_minutes = max(0, int(os.getenv("THREADS_SEARCH_CACHE_MINUTES", "45")))
         except ValueError:
             self._search_cache_minutes = 45
+        try:
+            self._max_post_age_days = max(0, int(os.getenv("THREADS_MAX_POST_AGE_DAYS", "45")))
+        except ValueError:
+            self._max_post_age_days = 45
 
         if self._scraperapi_key:
             print("  [Threads] 使用 ScraperAPI 模式")
@@ -201,6 +205,12 @@ class ThreadsCollector:
             return True
         return normalized.endswith(" on threads")
 
+    def _is_post_recent_enough(self, taken_at: datetime) -> bool:
+        if self._max_post_age_days <= 0:
+            return True
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self._max_post_age_days)
+        return taken_at >= cutoff
+
     def _parse_search_results(self, html: str, limit: int) -> List[Dict]:
         pattern = re.compile(
             r'"username":"(?P<username>[^"]+)"'
@@ -224,6 +234,9 @@ class ThreadsCollector:
             content = self._extract_fragments(match.group("fragments"))
             if not content:
                 continue
+            taken_at_dt = datetime.fromtimestamp(int(match.group("taken_at")), tz=timezone.utc)
+            if not self._is_post_recent_enough(taken_at_dt):
+                continue
             if not self._is_threads_relevant(username, full_name, content):
                 continue
 
@@ -232,7 +245,7 @@ class ThreadsCollector:
                 continue
             seen_links.add(link)
 
-            taken_at = datetime.fromtimestamp(int(match.group("taken_at")), tz=timezone.utc).isoformat(timespec="seconds")
+            taken_at = taken_at_dt.isoformat(timespec="seconds")
             rows.append(
                 {
                     "username": username,

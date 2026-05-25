@@ -64,6 +64,12 @@ class DashboardTodayTest(unittest.TestCase):
         finally:
             conn.close()
 
+    def _set_run_window(self, run_id: int, started_at: str, ended_at: str = None):
+        self._execute(
+            "UPDATE monitoring_runs SET started_at = ?, ended_at = ? WHERE id = ?",
+            (started_at, ended_at or started_at, run_id),
+        )
+
     def test_dashboard_day_summary_deduplicates_same_thread_within_day(self):
         run_1 = self.db.create_run("7-ELEVEN")
         run_2 = self.db.create_run("7-ELEVEN")
@@ -77,6 +83,38 @@ class DashboardTodayTest(unittest.TestCase):
         self.assertEqual(summary["total_articles"], 1)
         self.assertEqual(summary["brand_map"]["7-ELEVEN"]["total"], 1)
         self.assertEqual(len(summary["all_alerts"]), 1)
+
+    def test_dashboard_day_summary_uses_latest_completed_run_per_keyword(self):
+        older_run = self.db.create_run("7-ELEVEN")
+        newer_run = self.db.create_run("7-ELEVEN")
+        older_thread_id = self._seed_analysis(older_run, "7-ELEVEN", "https://example.com/older-post", "早上抓到的舊結果")
+        newer_thread_id = self._seed_analysis(newer_run, "7-ELEVEN", "https://example.com/newer-post", "下午最新結果")
+        self.db.close_run(older_run, articles_found=1, articles_new=1)
+        self.db.close_run(newer_run, articles_found=1, articles_new=1)
+
+        self._execute(
+            "UPDATE threads SET published_at = ?, first_seen_at = ? WHERE id = ?",
+            ("2026-05-19T09:00:00+08:00", "2026-05-19T09:00:00+08:00", older_thread_id),
+        )
+        self._execute(
+            "UPDATE threads SET published_at = ?, first_seen_at = ? WHERE id = ?",
+            ("2026-05-19T14:00:00+08:00", "2026-05-19T14:00:00+08:00", newer_thread_id),
+        )
+        self._execute(
+            "UPDATE monitoring_runs SET started_at = ?, ended_at = ? WHERE id = ?",
+            ("2026-05-19T09:30:00+08:00", "2026-05-19T09:35:00+08:00", older_run),
+        )
+        self._execute(
+            "UPDATE monitoring_runs SET started_at = ?, ended_at = ? WHERE id = ?",
+            ("2026-05-19T14:30:00+08:00", "2026-05-19T14:35:00+08:00", newer_run),
+        )
+
+        summary = self.db.get_dashboard_day_summary(snapshot_date="2026-05-19")
+
+        self.assertEqual(summary["total_articles"], 1)
+        self.assertEqual(summary["brand_map"]["7-ELEVEN"]["total"], 1)
+        self.assertEqual(summary["brand_map"]["7-ELEVEN"]["analyses"][0]["title"], "下午最新結果")
+        self.assertEqual(summary["all_alerts"][0]["title"], "下午最新結果")
 
     def test_save_thread_preserves_first_seen_at_on_upsert(self):
         thread_id = self.db.save_thread(
@@ -350,6 +388,7 @@ class DashboardTodayTest(unittest.TestCase):
 
     def test_dashboard_day_summary_freezes_at_last_completed_state_while_batch_running(self):
         now = datetime.now()
+        snapshot_date = now.date().isoformat()
         stable_end = (now - timedelta(minutes=10)).replace(microsecond=0)
         batch_start = (now - timedelta(minutes=5)).replace(microsecond=0)
         in_progress_end = (now - timedelta(minutes=1)).replace(microsecond=0)
@@ -359,7 +398,7 @@ class DashboardTodayTest(unittest.TestCase):
         self.db.close_run(old_run, articles_found=1, articles_new=1)
         self._execute(
             "UPDATE threads SET published_at = ?, first_seen_at = ? WHERE id = ?",
-            ("2026-05-19T08:00:00", "2026-05-19T08:05:00", old_thread_id),
+            (f"{snapshot_date}T08:00:00", f"{snapshot_date}T08:05:00", old_thread_id),
         )
         self._execute(
             "UPDATE monitoring_runs SET ended_at = ? WHERE id = ?",
@@ -377,17 +416,17 @@ class DashboardTodayTest(unittest.TestCase):
         self.db.close_run(new_run, articles_found=1, articles_new=1)
         self._execute(
             "UPDATE threads SET published_at = ?, first_seen_at = ? WHERE id = ?",
-            ("2026-05-19T09:10:00", "2026-05-19T09:10:00", new_thread_id),
+            (f"{snapshot_date}T09:10:00", f"{snapshot_date}T09:10:00", new_thread_id),
         )
         self._execute(
             "UPDATE monitoring_runs SET ended_at = ? WHERE id = ?",
             (in_progress_end.isoformat(), new_run),
         )
 
-        summary = self.db.get_dashboard_day_summary(snapshot_date="2026-05-19")
+        summary = self.db.get_dashboard_day_summary(snapshot_date=snapshot_date)
 
         self.assertIsNotNone(summary["active_batch"])
-        self.assertEqual(summary["updated_at"], stable_end.isoformat())
+        self.assertTrue(summary["updated_at"].startswith(stable_end.strftime("%Y-%m-%dT%H:%M:%S")))
         self.assertEqual(summary["total_articles"], 1)
         self.assertIn("7-ELEVEN", summary["brand_map"])
         self.assertEqual(summary["brand_map"]["7-ELEVEN"]["analyses"][0]["title"], "上一版完整結果")
@@ -430,16 +469,18 @@ class DashboardTodayTest(unittest.TestCase):
         self.assertGreaterEqual(rows[0]["risk_score"], 1)
 
     def test_dashboard_day_summary_excludes_old_thread_without_today_signal(self):
+        snapshot_date = "2026-05-19"
         run_id = self.db.create_run("7-ELEVEN")
         thread_id = self._seed_analysis(run_id, "7-ELEVEN", "https://example.com/old-post", "三月舊文")
         self.db.close_run(run_id, articles_found=1, articles_new=1)
+        self._set_run_window(run_id, f"{snapshot_date}T11:00:00+08:00", f"{snapshot_date}T11:05:00+08:00")
 
         self._execute(
             "UPDATE threads SET published_at = ?, first_seen_at = ? WHERE id = ?",
             ("2026-03-01T09:00:00", "2026-03-01T09:00:00", thread_id),
         )
 
-        summary = self.db.get_dashboard_day_summary(snapshot_date="2026-05-19")
+        summary = self.db.get_dashboard_day_summary(snapshot_date=snapshot_date)
 
         self.assertEqual(summary["total_articles"], 1)
         self.assertEqual(summary["channel_counts"]["youtube"], 1)
@@ -449,9 +490,11 @@ class DashboardTodayTest(unittest.TestCase):
         self.assertEqual(summary["all_alerts"][0]["recent_activity_at"], "2026-03-01T09:00:00")
 
     def test_dashboard_day_summary_includes_old_thread_with_today_comment_activity(self):
+        snapshot_date = "2026-05-19"
         run_id = self.db.create_run("7-ELEVEN")
         thread_id = self._seed_analysis(run_id, "7-ELEVEN", "https://example.com/reheated-post", "三月舊文今天延燒")
         self.db.close_run(run_id, articles_found=1, articles_new=1)
+        self._set_run_window(run_id, f"{snapshot_date}T10:00:00+08:00", f"{snapshot_date}T10:05:00+08:00")
         self._execute(
             "UPDATE threads SET published_at = ?, first_seen_at = ? WHERE id = ?",
             ("2026-03-20T08:00:00", "2026-03-20T08:00:00", thread_id),
@@ -462,28 +505,30 @@ class DashboardTodayTest(unittest.TestCase):
             item_type="comment",
             author="tester",
             platform_item_id="comment-1",
-            published_at="2026-05-19T10:32:00",
+            published_at=f"{snapshot_date}T10:32:00",
         )
 
-        summary = self.db.get_dashboard_day_summary(snapshot_date="2026-05-19")
+        summary = self.db.get_dashboard_day_summary(snapshot_date=snapshot_date)
 
         self.assertEqual(summary["total_articles"], 1)
         brand = summary["brand_map"]["7-ELEVEN"]
         self.assertEqual(brand["total"], 1)
         self.assertEqual(len(summary["all_alerts"]), 1)
-        self.assertEqual(summary["all_alerts"][0]["recent_activity_at"], "2026-05-19T10:32:00")
+        self.assertEqual(summary["all_alerts"][0]["recent_activity_at"], f"{snapshot_date}T10:32:00")
         self.assertEqual(summary["all_alerts"][0]["ongoing_days"], 60)
 
     def test_dashboard_day_summary_accepts_same_day_space_separated_timestamps(self):
+        snapshot_date = "2026-05-19"
         run_id = self.db.create_run("全家")
         thread_id = self._seed_analysis(run_id, "全家", "https://example.com/familymart-ptt", "同日 PTT 文章", score=3)
         self.db.close_run(run_id, articles_found=1, articles_new=1)
+        self._set_run_window(run_id, f"{snapshot_date}T08:00:00+08:00", f"{snapshot_date}T08:05:00+08:00")
         self._execute(
             "UPDATE threads SET channel = ?, published_at = ?, first_seen_at = ? WHERE id = ?",
-            ("ptt", "2026-05-19 00:00", "2026-05-19T08:30:00+08:00", thread_id),
+            ("ptt", f"{snapshot_date} 00:00", f"{snapshot_date}T08:30:00+08:00", thread_id),
         )
 
-        summary = self.db.get_dashboard_day_summary(snapshot_date="2026-05-19")
+        summary = self.db.get_dashboard_day_summary(snapshot_date=snapshot_date)
 
         self.assertEqual(summary["total_articles"], 1)
         self.assertEqual(summary["channel_counts"]["ptt"], 1)
@@ -506,6 +551,7 @@ class DashboardTodayTest(unittest.TestCase):
         self.assertEqual(summary["all_alerts"][0]["channel"], "threads")
 
     def test_dashboard_day_summary_excludes_old_youtube_video_without_today_comment_activity(self):
+        snapshot_date = "2026-05-19"
         run_id = self.db.create_run("7-ELEVEN")
         thread_id = self._seed_analysis(
             run_id,
@@ -514,16 +560,17 @@ class DashboardTodayTest(unittest.TestCase):
             "兩年前的 YouTube 舊片",
         )
         self.db.close_run(run_id, articles_found=1, articles_new=1)
+        self._set_run_window(run_id, f"{snapshot_date}T08:00:00+08:00", f"{snapshot_date}T08:05:00+08:00")
         self._execute(
             "UPDATE threads SET channel = ?, first_seen_at = ?, published_at = ? WHERE id = ?",
-            ("youtube", "2026-05-19T08:21:00", "2024-05-19T08:00:00", thread_id),
+            ("youtube", f"{snapshot_date}T08:21:00", "2024-05-19T08:00:00", thread_id),
         )
         self._execute(
             "UPDATE thread_items SET published_at = ? WHERE thread_id = ?",
             ("2026-04-28T12:00:00", thread_id),
         )
 
-        summary = self.db.get_dashboard_day_summary(snapshot_date="2026-05-19")
+        summary = self.db.get_dashboard_day_summary(snapshot_date=snapshot_date)
 
         self.assertEqual(summary["total_articles"], 1)
         self.assertEqual(summary["channel_counts"]["youtube"], 1)
@@ -532,6 +579,7 @@ class DashboardTodayTest(unittest.TestCase):
         self.assertEqual(summary["all_alerts"][0]["recent_activity_at"], "2024-05-19T08:00:00")
 
     def test_get_dashboard_trend_uses_negative_ratio_for_past_days_and_live_today(self):
+        today = "2026-05-19"
         for date, article_count, neg_count in [
             ("2026-05-13", 10, 2),
             ("2026-05-14", 10, 3),
@@ -558,12 +606,13 @@ class DashboardTodayTest(unittest.TestCase):
         run_id = self.db.create_run("7-ELEVEN")
         thread_id = self._seed_analysis(run_id, "7-ELEVEN", "https://example.com/today-live", "今天新文", score=4)
         self.db.close_run(run_id, articles_found=1, articles_new=1)
+        self._set_run_window(run_id, f"{today}T09:00:00+08:00", f"{today}T09:05:00+08:00")
         self._execute(
             "UPDATE threads SET first_seen_at = ?, published_at = ? WHERE id = ?",
-            ("2026-05-19T09:00:00", "2026-05-19T09:00:00", thread_id),
+            (f"{today}T09:00:00", f"{today}T09:00:00", thread_id),
         )
 
-        trend = self.db.get_dashboard_trend(days=7, keywords=["7-ELEVEN"], today="2026-05-19")
+        trend = self.db.get_dashboard_trend(days=7, keywords=["7-ELEVEN"], today=today)
 
         self.assertEqual(set(trend["7-ELEVEN"].keys()), {
             "2026-05-13",

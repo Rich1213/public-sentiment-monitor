@@ -1150,7 +1150,10 @@ class SentimentDB:
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
-            sql = f"SELECT id FROM monitoring_runs WHERE ended_at IS NOT NULL AND substr(COALESCE(ended_at, started_at, ''), 1, 10) = {ph}"
+            sql = (
+                "SELECT id, keyword, ended_at, started_at "
+                f"FROM monitoring_runs WHERE ended_at IS NOT NULL AND substr(COALESCE(ended_at, started_at, ''), 1, 10) = {ph}"
+            )
             params: List[Any] = [snapshot_date]
             if before_started_at:
                 sql += f" AND ended_at < {ph}"
@@ -1159,10 +1162,15 @@ class SentimentDB:
                 placeholders = ",".join([ph] * len(keywords))
                 sql += f" AND keyword IN ({placeholders})"
                 params.extend(keywords)
-            sql += " ORDER BY ended_at ASC, started_at ASC, id ASC"
+            sql += " ORDER BY ended_at DESC, started_at DESC, id DESC"
             c.execute(sql, tuple(params))
-            rows = c.fetchall()
-            return [row[0] if not isinstance(row, dict) else row["id"] for row in rows]
+            rows = self._adapter.fetchall_dict(c)
+            latest_by_keyword: Dict[str, int] = {}
+            for row in rows:
+                keyword = row.get("keyword")
+                if keyword and keyword not in latest_by_keyword:
+                    latest_by_keyword[keyword] = row["id"]
+            return list(latest_by_keyword.values())
         finally:
             conn.close()
 

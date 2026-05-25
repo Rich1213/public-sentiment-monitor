@@ -1,11 +1,14 @@
 import os
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from unittest.mock import Mock, patch
 
 from src.collectors.threads_collector import ThreadsCollector
 from src.utils.db_manager import SentimentDB
 
+
+_NOW_TS = int(datetime.now(timezone.utc).timestamp())
 
 SAMPLE_THREADS_SEARCH_HTML = """
 <html><body>
@@ -16,7 +19,7 @@ SAMPLE_THREADS_SEARCH_HTML = """
       "username":"7eleventw",
       "full_name":"7-ELEVEn Taiwan",
       "code":"DKdhrm6v3NX",
-      "taken_at":1749024000,
+      "taken_at":__NOW_TS_1__,
       "text_post_app_info":{"text_fragments":{"fragments":[{"fragment_type":"plaintext","plaintext":"7-ELEVEN 新品開箱，大家最想吃哪個？"}]}},
       "direct_reply_count":55,
       "repost_count":17,
@@ -27,7 +30,7 @@ SAMPLE_THREADS_SEARCH_HTML = """
       "username":"foody_amigo",
       "full_name":"美食帳號",
       "code":"DO2N7fQEoYw",
-      "taken_at":1749027600,
+      "taken_at":__NOW_TS_2__,
       "text_post_app_info":{"text_fragments":{"fragments":[{"fragment_type":"plaintext","plaintext":"7-11 新品這次表現不錯，牛奶糖霜淇淋值得回購。"}]}},
       "direct_reply_count":6,
       "repost_count":2,
@@ -38,7 +41,7 @@ SAMPLE_THREADS_SEARCH_HTML = """
       "username":"plain_user",
       "full_name":"一般用戶",
       "code":"ABC123xyz",
-      "taken_at":1749031200,
+      "taken_at":__NOW_TS_3__,
       "text_post_app_info":{"text_fragments":{"fragments":[{"fragment_type":"plaintext","plaintext":"小七店員態度真的很差，排隊排到火大。"}]}},
       "direct_reply_count":12,
       "repost_count":0,
@@ -49,7 +52,7 @@ SAMPLE_THREADS_SEARCH_HTML = """
 }
 </script>
 </body></html>
-"""
+""".replace("__NOW_TS_1__", str(_NOW_TS)).replace("__NOW_TS_2__", str(_NOW_TS + 60)).replace("__NOW_TS_3__", str(_NOW_TS + 120))
 
 
 class ThreadsCollectorConfigTest(unittest.TestCase):
@@ -230,6 +233,29 @@ class ThreadsCollectorConfigTest(unittest.TestCase):
                 content="統一獅自1989年成軍至今，走過低潮、締造榮耀，如今隊史兩千勝即將達成。",
             )
         )
+
+    def test_parse_search_results_rejects_stale_threads_posts(self):
+        stale_html = """
+        <html><body><script type="application/json">{
+          "data": [{
+            "username":"plain_user",
+            "full_name":"一般用戶",
+            "code":"OLD123xyz",
+            "taken_at":1704067200,
+            "text_post_app_info":{"text_fragments":{"fragments":[{"fragment_type":"plaintext","plaintext":"小七店員態度很差，排隊排到火大。"}]}},
+            "direct_reply_count":12,
+            "repost_count":0,
+            "quote_count":0,
+            "reshare_count":1
+          }]
+        }</script></body></html>
+        """
+        with patch.dict(os.environ, {"SCRAPERAPI_KEY": "scraper-key"}, clear=False):
+            collector = ThreadsCollector("7-ELEVEN")
+
+        rows = collector._parse_search_results(stale_html, limit=5)
+
+        self.assertEqual(rows, [])
 
     def test_fetch_latest_posts_stops_after_collecting_enough_unique_candidates(self):
         with patch.dict(os.environ, {"SCRAPERAPI_KEY": "scraper-key"}, clear=False):
