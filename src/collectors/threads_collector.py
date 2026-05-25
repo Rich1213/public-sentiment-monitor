@@ -12,6 +12,7 @@ ThreadsCollector — Threads 搜尋採集器 v1（ScraperAPI 單一路徑）
 import json
 import os
 import re
+import html
 import urllib.parse
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -50,6 +51,20 @@ class ThreadsCollector:
     def _search_cache_key(self) -> str:
         return f"threads_search:v1:{self.keyword}"
 
+    def _ordered_search_terms(self) -> List[str]:
+        ordered: List[str] = []
+        seen = set()
+        for term in self._official_handles() + self.search_terms:
+            cleaned = (term or "").strip()
+            if not cleaned:
+                continue
+            key = cleaned.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            ordered.append(cleaned)
+        return ordered
+
     def _scraperapi_get(self, target_url: str, render: bool = True, timeout: int = 90):
         return requests.get(
             SCRAPERAPI_ENDPOINT,
@@ -77,6 +92,43 @@ class ThreadsCollector:
                 guessed.append(cleaned)
         return guessed
 
+    def _threads_context_keywords(self) -> List[str]:
+        return [kw.lower() for kw in self.brand_config.get("threads_context_keywords", []) if kw]
+
+    def _threads_store_context_keywords(self) -> List[str]:
+        generic_store_markers = [
+            "超商", "便利商店", "門市", "店員", "交貨便", "ibon",
+            "city cafe", "openpoint", "open point", "咖啡", "鮮食",
+            "御飯糰", "茶葉蛋", "霜淇淋", "思樂冰", "取貨", "寄杯",
+            "會員", "冷麵", "飯糰", "調酒",
+        ]
+        return list(dict.fromkeys(
+            kw for kw in (self._threads_context_keywords() + generic_store_markers)
+            if kw not in {"台灣", "臺灣"}
+        ))
+
+    def _threads_focus_keywords(self) -> List[str]:
+        return [
+            "新品", "新口味", "口味", "聯名", "開箱", "回購", "好吃", "難吃",
+            "咖啡", "飲料", "調酒", "霜淇淋", "冰淇淋", "飯糰", "便當",
+            "麵包", "甜點", "沙拉", "御飯糰", "茶葉蛋", "思樂冰", "熱狗",
+            "三明治", "冷麵", "涼麵", "鮮食", "服務", "店員", "態度",
+            "排隊", "門市", "取貨", "結帳", "寄杯",
+        ]
+
+    def _has_cjk_text(self, text: str) -> bool:
+        return bool(re.search(r"[\u3400-\u4dbf\u4e00-\u9fff]", text or ""))
+
+    def _is_official_giveaway_post(self, content: str) -> bool:
+        text = content or ""
+        if any(marker in text for marker in ["抽獎", "免費獲得", "中獎", "贈送", "贈品"]):
+            return True
+        if "活動時間" in text and "指定規則" in text:
+            return True
+        if "追蹤" in text and "留言" in text and ("獲得" in text or "機會" in text):
+            return True
+        return False
+
     def _is_official_account(self, username: str, full_name: str) -> bool:
         uname = (username or "").lower()
         fname = (full_name or "").lower()
@@ -84,6 +136,48 @@ class ThreadsCollector:
         if uname in official_handles:
             return True
         return any(token in uname or token in fname for token in official_handles)
+
+    def _is_threads_relevant(self, username: str, full_name: str, content: str) -> bool:
+        combined = " ".join([username or "", full_name or "", content or ""]).lower()
+        if not self._has_cjk_text(content):
+            return False
+
+        if self._is_official_account(username, full_name):
+            if self._is_official_giveaway_post(content):
+                return False
+            return True
+
+        if not is_brand_relevant(self.keyword, content, content):
+            return False
+
+        overseas_markers = [
+            "singapore", "malaysia", "japan", "tokyo", "osaka", "philippines",
+            "manila", "hong kong", "thailand", "kuala lumpur", "rm", "sgd", "¥", "usd",
+        ]
+        taiwan_markers = self._threads_context_keywords()
+        store_markers = self._threads_store_context_keywords()
+        focus_markers = self._threads_focus_keywords()
+        has_taiwan_context = any(marker in combined for marker in taiwan_markers)
+        has_overseas_context = any(marker in combined for marker in overseas_markers)
+        has_store_context = any(marker in combined for marker in store_markers)
+        has_focus_signal = any(marker in combined for marker in focus_markers)
+
+        if has_overseas_context and not has_taiwan_context:
+            return False
+
+        generic_english_brand_markers = ["7-eleven", "7-11", "seven eleven", "711"]
+        has_generic_english_brand = any(marker in combined for marker in generic_english_brand_markers)
+
+        if has_generic_english_brand and not has_taiwan_context:
+            return False
+
+        if not has_store_context:
+            return False
+
+        if not has_focus_signal:
+            return False
+
+        return True
 
     def _extract_fragments(self, fragment_blob: str) -> str:
         matches = re.findall(r'"plaintext":"((?:[^"\\]|\\.)*)"', fragment_blob)
@@ -94,6 +188,18 @@ class ThreadsCollector:
             except Exception:
                 texts.append(raw.replace('\\"', '"'))
         return " ".join(t.strip() for t in texts if t.strip())
+
+    def _has_result_markers(self, html: str) -> bool:
+        return all(
+            marker in html
+            for marker in ('"username":"', '"taken_at":', '"plaintext":"', '"direct_reply_count":')
+        )
+
+    def _is_generic_threads_meta_title(self, title: str) -> bool:
+        normalized = html.unescape((title or "")).strip().lower()
+        if not normalized:
+            return True
+        return normalized.endswith(" on threads")
 
     def _parse_search_results(self, html: str, limit: int) -> List[Dict]:
         pattern = re.compile(
@@ -118,7 +224,7 @@ class ThreadsCollector:
             content = self._extract_fragments(match.group("fragments"))
             if not content:
                 continue
-            if not is_brand_relevant(self.keyword, content, content):
+            if not self._is_threads_relevant(username, full_name, content):
                 continue
 
             link = f"https://www.threads.com/@{username}/post/{code}"
@@ -165,7 +271,14 @@ class ThreadsCollector:
             if resp.status_code != 200:
                 print(f"  [Threads/search] 「{term}」→ {resp.status_code}")
                 return []
-            return self._parse_search_results(resp.text, limit=limit)
+            rows = self._parse_search_results(resp.text, limit=limit)
+            if rows:
+                print(f"  [Threads/search] 「{term}」→ 解析 {len(rows)} 筆")
+            elif self._has_result_markers(resp.text):
+                print(f"  [Threads/search] 「{term}」→ 有頁面資料，但品牌過濾後為 0 筆")
+            else:
+                print(f"  [Threads/search] 「{term}」→ 空殼頁或無可解析結果")
+            return rows
         except Exception as e:
             print(f"  [Threads/search] 「{term}」失敗：{e}")
             return []
@@ -182,15 +295,19 @@ class ThreadsCollector:
             desc_match = re.search(r'<meta name="description" content="([^"]+)"', resp.text)
 
             if title_match:
-                row["title"] = title_match.group(1).strip() or row["title"]
+                meta_title = html.unescape(title_match.group(1)).strip()
+                if meta_title and not self._is_generic_threads_meta_title(meta_title):
+                    row["title"] = meta_title
             if desc_match:
-                row["content"] = desc_match.group(1).strip() or row["content"]
+                meta_desc = html.unescape(desc_match.group(1)).strip()
+                row["content"] = meta_desc or row["content"]
             return row
         except Exception:
             return row
 
     def fetch_latest_posts(self, limit: int = DEFAULT_FETCH_LIMIT, fresh_mode: bool = False) -> List[Dict]:
-        terms_str = " / ".join(self.search_terms)
+        ordered_terms = self._ordered_search_terms()
+        terms_str = " / ".join(ordered_terms)
         print(f"  Fetching Threads posts for keyword: {self.keyword}（搜尋詞：{terms_str}）...")
         if not self._scraperapi_key:
             print("  [Threads] 未設定 SCRAPERAPI_KEY，跳過採集")
@@ -212,12 +329,17 @@ class ThreadsCollector:
             merged: List[Dict] = []
             seen_links = set()
             per_term_limit = max(limit, 5)
-            for term in self.search_terms:
+            target_candidates = max(limit * 2, limit)
+            for term_index, term in enumerate(ordered_terms):
                 for row in self._fetch_search_results(term, limit=per_term_limit):
                     if row["link"] in seen_links:
                         continue
                     seen_links.add(row["link"])
                     merged.append(row)
+                # Threads 搜尋 render=true 很慢；至少跑兩個 term 後，候選夠用就先停。
+                if len(merged) >= target_candidates and term_index >= 1:
+                    print(f"  [Threads] 候選已達 {len(merged)} 篇，提前停止後續搜尋詞")
+                    break
             merged.sort(
                 key=lambda row: (
                     0 if row["is_official"] else 1,
@@ -230,7 +352,7 @@ class ThreadsCollector:
                     row["published"],
                 )
             )
-            rows = merged[: max(limit * 2, limit)]
+            rows = merged[:target_candidates]
             if self.db and self._search_cache_minutes > 0 and rows:
                 self.db.set_collector_cache(cache_key, {"results": rows}, ttl_minutes=self._search_cache_minutes)
 
@@ -240,26 +362,38 @@ class ThreadsCollector:
             detailed = self._fetch_post_detail(dict(row)) if should_enrich else dict(row)
             title = (detailed.get("title") or detailed.get("content") or "")[:120]
             content = detailed.get("content") or ""
-            articles.append(
-                {
-                    "title": title,
-                    "link": detailed["link"],
-                    "source": self.SOURCE_NAME,
-                    "published": detailed.get("published") or datetime.now(timezone.utc).isoformat(timespec="seconds"),
-                    "content": content,
-                    "channel": self.CHANNEL,
-                    "keyword": self.keyword,
-                    "author": detailed.get("username"),
-                    "comment_count": detailed.get("reply_count", 0),
-                    "board": "official" if detailed.get("is_official") else "public_feedback",
-                    "threads_metrics": {
-                        "reply_count": detailed.get("reply_count", 0),
-                        "repost_count": detailed.get("repost_count", 0),
-                        "quote_count": detailed.get("quote_count", 0),
-                        "reshare_count": detailed.get("reshare_count", 0),
-                    },
-                }
-            )
+            article = {
+                "title": title,
+                "link": detailed["link"],
+                "source": self.SOURCE_NAME,
+                "published": detailed.get("published") or datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "content": content,
+                "channel": self.CHANNEL,
+                "keyword": self.keyword,
+                "author": detailed.get("username"),
+                "comment_count": detailed.get("reply_count", 0),
+                "board": "official" if detailed.get("is_official") else "public_feedback",
+                "threads_metrics": {
+                    "reply_count": detailed.get("reply_count", 0),
+                    "repost_count": detailed.get("repost_count", 0),
+                    "quote_count": detailed.get("quote_count", 0),
+                    "reshare_count": detailed.get("reshare_count", 0),
+                },
+            }
+            if self.db:
+                thread_id = self.db.save_thread(
+                    url=article["link"],
+                    source_name=self.SOURCE_NAME,
+                    channel=self.CHANNEL,
+                    title=article["title"],
+                    board=article["board"],
+                    keyword=self.keyword,
+                    published_at=article["published"],
+                    comment_count=article["comment_count"],
+                )
+                if content:
+                    self.db.save_thread_item(thread_id, content, item_type="main")
+            articles.append(article)
 
         print(f"  → Threads: {len(articles)} 篇完成")
         return articles
