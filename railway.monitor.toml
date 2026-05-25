@@ -1,0 +1,7 @@
+[build]
+builder = "RAILPACK"
+
+[deploy]
+startCommand = "python -m worker.runner"
+restartPolicyType = "NEVER"
+cronSchedule = "30 13 * * *"
