@@ -21,6 +21,9 @@
   .logo-text { font-size: 18px; font-weight: 700; color: #0f172a; }
   .logo-sub { font-size: 13px; color: #94a3b8; margin-top: 2px; }
   .topbar-right { display: flex; align-items: center; gap: 12px; }
+  .nav-tabs { display:flex; gap:8px; margin-right:8px; }
+  .nav-link { text-decoration:none; font-size:14px; font-weight:700; color:#475569; padding:8px 14px; border-radius:10px; border:1px solid #dbe4ef; background:#f8fafc; }
+  .nav-link.active { background:#7c3aed; color:white; border-color:#7c3aed; }
   .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; display: inline-block; margin-right: 5px; animation: pulse 2s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
   .status-text { font-size: 14px; color: #64748b; }
@@ -211,6 +214,10 @@
       </div>
     </div>
     <div class="topbar-right">
+      <nav class="nav-tabs">
+        <a class="nav-link active" href="./dashboard.html">今日監控</a>
+        <a class="nav-link" href="./intelligence.html">品牌決策</a>
+      </nav>
       <span class="status-text"><span class="status-dot" id="status-dot"></span><span id="status-label">連線中...</span></span>
       <span class="last-update" id="last-update">—</span>
     </div>

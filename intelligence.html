@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>品牌決策 Intelligence</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Noto Sans TC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #eef2f6; color: #1e293b; min-height: 100vh; }
+  .app { max-width: 1320px; margin: 0 auto; padding: 24px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: #ffffff; border: 1px solid #dbe4ef; border-radius: 18px; margin-bottom: 18px; box-shadow: 0 8px 24px rgba(15,23,42,0.05); }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, #1d4ed8, #0f766e); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; color: white; }
+  .logo-text { font-size: 18px; font-weight: 700; color: #0f172a; }
+  .logo-sub { font-size: 13px; color: #94a3b8; margin-top: 2px; }
+  .topbar-right { display:flex; align-items:center; gap:12px; }
+  .nav-tabs { display:flex; gap:8px; }
+  .nav-link { text-decoration:none; font-size:14px; font-weight:700; color:#475569; padding:8px 14px; border-radius:10px; border:1px solid #dbe4ef; background:#f8fafc; }
+  .nav-link.active { background:#0f172a; color:white; border-color:#0f172a; }
+  .hero { display:grid; grid-template-columns: 1.3fr 1fr; gap:16px; margin-bottom:18px; }
+  .card { background:#ffffff; border:1px solid #dbe4ef; border-radius:18px; padding:20px 22px; box-shadow:0 8px 26px rgba(15,23,42,0.05); }
+  .hero-card { background: linear-gradient(180deg, #0f172a 0%, #111827 100%); color:#f8fafc; border:none; }
+  .hero-card h1 { font-size:36px; font-weight:900; margin-bottom:10px; }
+  .hero-card p { color:#cbd5e1; line-height:1.9; font-size:15px; }
+  .section-title { font-size:15px; font-weight:700; color:#64748b; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+  .kpi-big { font-family:"Bebas Neue", sans-serif; font-size:68px; line-height:0.9; }
+  .kpi-sub { color:#94a3b8; margin-top:10px; font-size:14px; }
+  .grid-2 { display:grid; grid-template-columns: 1fr 1fr; gap:16px; margin-bottom:18px; }
+  .topic-list { display:grid; gap:12px; }
+  .topic-item { border:1px solid #e2e8f0; border-radius:14px; padding:14px 16px; background:#fbfdff; }
+  .topic-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:6px; }
+  .topic-name { font-size:16px; font-weight:700; color:#0f172a; }
+  .topic-meta { color:#64748b; font-size:13px; }
+  .pill { display:inline-flex; align-items:center; padding:4px 10px; border-radius:999px; font-size:12px; font-weight:700; }
+  .pill-risk { background:#fee2e2; color:#991b1b; }
+  .pill-opportunity { background:#d1fae5; color:#065f46; }
+  .matrix-list { display:grid; gap:10px; }
+  .matrix-item { display:flex; align-items:center; justify-content:space-between; gap:12px; border-bottom:1px solid #eef2f7; padding-bottom:10px; }
+  .empty { color:#94a3b8; font-size:14px; line-height:1.8; }
+  @media (max-width: 900px) {
+    .hero, .grid-2 { grid-template-columns: 1fr; }
+    .topbar { flex-direction:column; align-items:flex-start; gap:10px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo">
+      <div class="logo-icon">◎</div>
+      <div>
+        <div class="logo-text">品牌決策</div>
+        <div class="logo-sub">Brand Intelligence · 30/90 天議題與月度觀察</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <nav class="nav-tabs">
+        <a class="nav-link" href="./dashboard.html">今日監控</a>
+        <a class="nav-link active" href="./intelligence.html">品牌決策</a>
+      </nav>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="card hero-card">
+      <h1>品牌決策</h1>
+      <p id="intel-summary">查看 30 / 90 天議題、延燒事件、競品比較與月度觀察，這裡不是今日值班盤，而是品牌、行銷、公關的長期 intelligence 工作台。</p>
+    </div>
+    <div class="card">
+      <div class="section-title">本月主要議題數</div>
+      <div class="kpi-big" id="intel-topic-count">—</div>
+      <div class="kpi-sub" id="intel-kpi-sub">等待 intelligence API</div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="section-title">主要議題地圖</div>
+      <div class="topic-list" id="topic-list"><div class="empty">載入中…</div></div>
+    </div>
+    <div class="card">
+      <div class="section-title">仍在延燒的風險</div>
+      <div class="topic-list" id="risk-list"><div class="empty">載入中…</div></div>
+    </div>
+  </div>
+
+  <div class="grid-2">
+    <div class="card">
+      <div class="section-title">可承接的機會議題</div>
+      <div class="topic-list" id="opportunity-list"><div class="empty">載入中…</div></div>
+    </div>
+    <div class="card">
+      <div class="section-title">競品議題矩陣</div>
+      <div class="matrix-list" id="matrix-list"><div class="empty">載入中…</div></div>
+    </div>
+  </div>
+</div>
+
+<script src="./intelligence_summary.js"></script>
+<script>
+const API = new URLSearchParams(window.location.search).get('api')
+  || localStorage.getItem('psm-api')
+  || 'https://web-production-7a3df.up.railway.app';
+const { formatTopicCount, sentimentLabel, topCompetitiveThemes } = window.IntelligenceSummary;
+
+function renderTopicBlock(nodeId, topics, pillClass, emptyText) {
+  const root = document.getElementById(nodeId);
+  if (!topics || topics.length === 0) {
+    root.innerHTML = `<div class="empty">${emptyText}</div>`;
+    return;
+  }
+  root.innerHTML = topics.map(topic => `
+    <div class="topic-item">
+      <div class="topic-head">
+        <div class="topic-name">${topic.label || topic.theme || '未分類議題'}</div>
+        <span class="pill ${pillClass}">${sentimentLabel(topic)}</span>
+      </div>
+      <div class="topic-meta">${formatTopicCount(topic)}</div>
+    </div>
+  `).join('');
+}
+
+async function loadIntelligencePage() {
+  const month = new Date().toISOString().slice(0, 7);
+  const [topicsResp, snapshotResp] = await Promise.all([
+    fetch(`${API}/intelligence/topics?days=90&scope_key=market`),
+    fetch(`${API}/intelligence/snapshots/monthly?month=${month}&scope_key=market`),
+  ]);
+  const topicsBody = await topicsResp.json();
+  const snapshotBody = await snapshotResp.json();
+
+  const topics = topicsBody.topics || [];
+  const risks = snapshotBody.active_risks || [];
+  const opportunities = snapshotBody.opportunities || [];
+  const matrix = snapshotBody.competitive_matrix || {};
+
+  document.getElementById('intel-topic-count').textContent = topics.length;
+  document.getElementById('intel-kpi-sub').textContent = snapshotBody.narrative_summary || '本月尚無快照摘要';
+  document.getElementById('intel-summary').textContent = snapshotBody.narrative_summary || document.getElementById('intel-summary').textContent;
+
+  renderTopicBlock('topic-list', topics, 'pill-opportunity', '近 90 天尚無可顯示的 topic。');
+  renderTopicBlock('risk-list', risks, 'pill-risk', '本月尚無 active risk snapshot。');
+  renderTopicBlock('opportunity-list', opportunities, 'pill-opportunity', '本月尚無可承接的機會議題。');
+
+  const matrixList = document.getElementById('matrix-list');
+  const matrixThemes = topCompetitiveThemes(matrix);
+  if (matrixThemes.length === 0) {
+    matrixList.innerHTML = '<div class="empty">本月尚無競品議題矩陣。</div>';
+  } else {
+    matrixList.innerHTML = matrixThemes.map(item => `
+      <div class="matrix-item">
+        <div class="topic-name">${item.theme}</div>
+        <div class="topic-meta">總訊號 ${item.total}</div>
+      </div>
+    `).join('');
+  }
+}
+
+loadIntelligencePage().catch(() => {
+  document.getElementById('intel-summary').textContent = 'Intelligence API 連線失敗';
+  document.getElementById('topic-list').innerHTML = '<div class="empty">無法載入 intelligence topics。</div>';
+  document.getElementById('risk-list').innerHTML = '<div class="empty">無法載入 active risks。</div>';
+  document.getElementById('opportunity-list').innerHTML = '<div class="empty">無法載入 opportunity topics。</div>';
+  document.getElementById('matrix-list').innerHTML = '<div class="empty">無法載入競品議題矩陣。</div>';
+});
+</script>
+</body>
+</html>
