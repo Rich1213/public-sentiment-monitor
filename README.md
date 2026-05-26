@@ -49,6 +49,9 @@ python main.py --fresh             # 強制重新採集
 | `TELEGRAM_CHAT_ID` | ✅ | 接收警報的 Chat ID |
 | `MONITOR_KEYWORDS` | — | 監控品牌（逗號分隔，預設監控四大品牌） |
 | `FETCH_LIMIT` | — | 每渠道採集上限（預設 10）|
+| `INTER_ARTICLE_DELAY` | — | 逐篇 AI 分析冷卻秒數；若未設定，非 NVIDIA 情感模型預設 `0` |
+| `INTER_BRAND_COOLDOWN` | — | 品牌之間冷卻秒數；若未設定，非 NVIDIA 情感模型預設 `0` |
+| `THREADS_SEARCH_MAX_WORKERS` | — | Threads 搜尋批次併發數（預設 `2`，建議維持小量） |
 | `ALERT_THRESHOLD` | — | 負面警報閾值，1～5（預設 3）|
 | `YOUTUBE_POPULAR_MAX_AGE_HOURS` | — | YouTube 高觀看影片允許的最大片齡（預設 168 小時，避免舊熱門片回流） |
 
