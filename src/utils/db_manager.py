@@ -287,6 +287,75 @@ class SentimentDB:
                     UNIQUE(snapshot_date, keyword)
                 )""")
                 c.execute("CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date ON daily_snapshots(snapshot_date)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_event_cases (
+                    id                 TEXT PRIMARY KEY,
+                    keyword            TEXT NOT NULL,
+                    canonical_theme    TEXT NOT NULL,
+                    label              TEXT NOT NULL,
+                    status             TEXT NOT NULL DEFAULT 'active',
+                    severity           INTEGER DEFAULT 0,
+                    first_seen_at      TEXT NOT NULL,
+                    last_seen_at       TEXT NOT NULL,
+                    evidence_count     INTEGER DEFAULT 0,
+                    source_mix_json    TEXT,
+                    sentiment_mix_json TEXT,
+                    metadata_json      TEXT,
+                    created_at         TEXT DEFAULT NOW(),
+                    updated_at         TEXT DEFAULT NOW()
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_event_cases_keyword ON intel_event_cases(keyword)")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_event_cases_last_seen ON intel_event_cases(last_seen_at)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_event_case_threads (
+                    id                 SERIAL PRIMARY KEY,
+                    event_case_id      TEXT NOT NULL REFERENCES intel_event_cases(id) ON DELETE CASCADE,
+                    thread_id          TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+                    latest_analysis_id INTEGER REFERENCES analyses(id),
+                    first_bound_at     TEXT NOT NULL,
+                    last_bound_at      TEXT NOT NULL,
+                    UNIQUE(event_case_id, thread_id)
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_event_case_threads_case ON intel_event_case_threads(event_case_id)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_topics (
+                    id                 TEXT PRIMARY KEY,
+                    scope_key          TEXT NOT NULL,
+                    canonical_theme    TEXT NOT NULL,
+                    label              TEXT NOT NULL,
+                    first_seen_at      TEXT NOT NULL,
+                    last_seen_at       TEXT NOT NULL,
+                    event_count        INTEGER DEFAULT 0,
+                    signal_count       INTEGER DEFAULT 0,
+                    sentiment_mix_json TEXT,
+                    source_mix_json    TEXT,
+                    metadata_json      TEXT,
+                    created_at         TEXT DEFAULT NOW(),
+                    updated_at         TEXT DEFAULT NOW()
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_topics_scope ON intel_topics(scope_key)")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_topics_last_seen ON intel_topics(last_seen_at)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_topic_events (
+                    id             SERIAL PRIMARY KEY,
+                    topic_id       TEXT NOT NULL REFERENCES intel_topics(id) ON DELETE CASCADE,
+                    event_case_id  TEXT NOT NULL REFERENCES intel_event_cases(id) ON DELETE CASCADE,
+                    first_bound_at TEXT NOT NULL,
+                    last_bound_at  TEXT NOT NULL,
+                    UNIQUE(topic_id, event_case_id)
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_topic_events_topic ON intel_topic_events(topic_id)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_monthly_snapshots (
+                    id                      SERIAL PRIMARY KEY,
+                    snapshot_month          TEXT NOT NULL,
+                    scope_type              TEXT NOT NULL,
+                    scope_key               TEXT NOT NULL,
+                    snapshot_at             TEXT NOT NULL,
+                    active_risks_json       TEXT,
+                    opportunity_topics_json TEXT,
+                    top_topics_json         TEXT,
+                    competitive_matrix_json TEXT,
+                    narrative_summary       TEXT,
+                    payload_json            TEXT,
+                    UNIQUE(snapshot_month, scope_type, scope_key)
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_monthly_snapshots_month ON intel_monthly_snapshots(snapshot_month)")
                 c.execute("""CREATE TABLE IF NOT EXISTS collector_cache (
                     cache_key    TEXT PRIMARY KEY,
                     payload_json TEXT NOT NULL,
@@ -345,6 +414,75 @@ class SentimentDB:
                     UNIQUE(snapshot_date, keyword)
                 )""")
                 c.execute("CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date ON daily_snapshots(snapshot_date)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_event_cases (
+                    id                 TEXT PRIMARY KEY,
+                    keyword            TEXT NOT NULL,
+                    canonical_theme    TEXT NOT NULL,
+                    label              TEXT NOT NULL,
+                    status             TEXT NOT NULL DEFAULT 'active',
+                    severity           INTEGER DEFAULT 0,
+                    first_seen_at      TEXT NOT NULL,
+                    last_seen_at       TEXT NOT NULL,
+                    evidence_count     INTEGER DEFAULT 0,
+                    source_mix_json    TEXT,
+                    sentiment_mix_json TEXT,
+                    metadata_json      TEXT,
+                    created_at         TEXT DEFAULT (datetime('now')),
+                    updated_at         TEXT DEFAULT (datetime('now'))
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_event_cases_keyword ON intel_event_cases(keyword)")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_event_cases_last_seen ON intel_event_cases(last_seen_at)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_event_case_threads (
+                    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_case_id      TEXT NOT NULL REFERENCES intel_event_cases(id) ON DELETE CASCADE,
+                    thread_id          TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+                    latest_analysis_id INTEGER REFERENCES analyses(id),
+                    first_bound_at     TEXT NOT NULL,
+                    last_bound_at      TEXT NOT NULL,
+                    UNIQUE(event_case_id, thread_id)
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_event_case_threads_case ON intel_event_case_threads(event_case_id)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_topics (
+                    id                 TEXT PRIMARY KEY,
+                    scope_key          TEXT NOT NULL,
+                    canonical_theme    TEXT NOT NULL,
+                    label              TEXT NOT NULL,
+                    first_seen_at      TEXT NOT NULL,
+                    last_seen_at       TEXT NOT NULL,
+                    event_count        INTEGER DEFAULT 0,
+                    signal_count       INTEGER DEFAULT 0,
+                    sentiment_mix_json TEXT,
+                    source_mix_json    TEXT,
+                    metadata_json      TEXT,
+                    created_at         TEXT DEFAULT (datetime('now')),
+                    updated_at         TEXT DEFAULT (datetime('now'))
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_topics_scope ON intel_topics(scope_key)")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_topics_last_seen ON intel_topics(last_seen_at)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_topic_events (
+                    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                    topic_id       TEXT NOT NULL REFERENCES intel_topics(id) ON DELETE CASCADE,
+                    event_case_id  TEXT NOT NULL REFERENCES intel_event_cases(id) ON DELETE CASCADE,
+                    first_bound_at TEXT NOT NULL,
+                    last_bound_at  TEXT NOT NULL,
+                    UNIQUE(topic_id, event_case_id)
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_topic_events_topic ON intel_topic_events(topic_id)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_monthly_snapshots (
+                    id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                    snapshot_month          TEXT NOT NULL,
+                    scope_type              TEXT NOT NULL,
+                    scope_key               TEXT NOT NULL,
+                    snapshot_at             TEXT NOT NULL,
+                    active_risks_json       TEXT,
+                    opportunity_topics_json TEXT,
+                    top_topics_json         TEXT,
+                    competitive_matrix_json TEXT,
+                    narrative_summary       TEXT,
+                    payload_json            TEXT,
+                    UNIQUE(snapshot_month, scope_type, scope_key)
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_monthly_snapshots_month ON intel_monthly_snapshots(snapshot_month)")
                 c.execute("""CREATE TABLE IF NOT EXISTS collector_cache (
                     cache_key    TEXT PRIMARY KEY,
                     payload_json TEXT NOT NULL,
@@ -504,6 +642,80 @@ class SentimentDB:
             );
             CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date ON daily_snapshots(snapshot_date);
 
+            CREATE TABLE IF NOT EXISTS intel_event_cases (
+                id                 TEXT PRIMARY KEY,
+                keyword            TEXT NOT NULL,
+                canonical_theme    TEXT NOT NULL,
+                label              TEXT NOT NULL,
+                status             TEXT NOT NULL DEFAULT 'active',
+                severity           INTEGER DEFAULT 0,
+                first_seen_at      TEXT NOT NULL,
+                last_seen_at       TEXT NOT NULL,
+                evidence_count     INTEGER DEFAULT 0,
+                source_mix_json    TEXT,
+                sentiment_mix_json TEXT,
+                metadata_json      TEXT,
+                created_at         TEXT DEFAULT (datetime('now')),
+                updated_at         TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_intel_event_cases_keyword ON intel_event_cases(keyword);
+            CREATE INDEX IF NOT EXISTS idx_intel_event_cases_last_seen ON intel_event_cases(last_seen_at);
+
+            CREATE TABLE IF NOT EXISTS intel_event_case_threads (
+                id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+                event_case_id      TEXT NOT NULL REFERENCES intel_event_cases(id) ON DELETE CASCADE,
+                thread_id          TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+                latest_analysis_id INTEGER REFERENCES analyses(id),
+                first_bound_at     TEXT NOT NULL,
+                last_bound_at      TEXT NOT NULL,
+                UNIQUE(event_case_id, thread_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_intel_event_case_threads_case ON intel_event_case_threads(event_case_id);
+
+            CREATE TABLE IF NOT EXISTS intel_topics (
+                id                 TEXT PRIMARY KEY,
+                scope_key          TEXT NOT NULL,
+                canonical_theme    TEXT NOT NULL,
+                label              TEXT NOT NULL,
+                first_seen_at      TEXT NOT NULL,
+                last_seen_at       TEXT NOT NULL,
+                event_count        INTEGER DEFAULT 0,
+                signal_count       INTEGER DEFAULT 0,
+                sentiment_mix_json TEXT,
+                source_mix_json    TEXT,
+                metadata_json      TEXT,
+                created_at         TEXT DEFAULT (datetime('now')),
+                updated_at         TEXT DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_intel_topics_scope ON intel_topics(scope_key);
+            CREATE INDEX IF NOT EXISTS idx_intel_topics_last_seen ON intel_topics(last_seen_at);
+
+            CREATE TABLE IF NOT EXISTS intel_topic_events (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                topic_id       TEXT NOT NULL REFERENCES intel_topics(id) ON DELETE CASCADE,
+                event_case_id  TEXT NOT NULL REFERENCES intel_event_cases(id) ON DELETE CASCADE,
+                first_bound_at TEXT NOT NULL,
+                last_bound_at  TEXT NOT NULL,
+                UNIQUE(topic_id, event_case_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_intel_topic_events_topic ON intel_topic_events(topic_id);
+
+            CREATE TABLE IF NOT EXISTS intel_monthly_snapshots (
+                id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+                snapshot_month          TEXT NOT NULL,
+                scope_type              TEXT NOT NULL,
+                scope_key               TEXT NOT NULL,
+                snapshot_at             TEXT NOT NULL,
+                active_risks_json       TEXT,
+                opportunity_topics_json TEXT,
+                top_topics_json         TEXT,
+                competitive_matrix_json TEXT,
+                narrative_summary       TEXT,
+                payload_json            TEXT,
+                UNIQUE(snapshot_month, scope_type, scope_key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_intel_monthly_snapshots_month ON intel_monthly_snapshots(snapshot_month);
+
             CREATE TABLE IF NOT EXISTS collector_cache (
                 cache_key    TEXT PRIMARY KEY,
                 payload_json TEXT NOT NULL,
@@ -646,6 +858,75 @@ class SentimentDB:
                 UNIQUE(snapshot_date, keyword)
             )""",
             "CREATE INDEX IF NOT EXISTS idx_daily_snapshots_date ON daily_snapshots(snapshot_date)",
+            """CREATE TABLE IF NOT EXISTS intel_event_cases (
+                id                 TEXT PRIMARY KEY,
+                keyword            TEXT NOT NULL,
+                canonical_theme    TEXT NOT NULL,
+                label              TEXT NOT NULL,
+                status             TEXT NOT NULL DEFAULT 'active',
+                severity           INTEGER DEFAULT 0,
+                first_seen_at      TEXT NOT NULL,
+                last_seen_at       TEXT NOT NULL,
+                evidence_count     INTEGER DEFAULT 0,
+                source_mix_json    TEXT,
+                sentiment_mix_json TEXT,
+                metadata_json      TEXT,
+                created_at         TIMESTAMPTZ DEFAULT NOW(),
+                updated_at         TIMESTAMPTZ DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_intel_event_cases_keyword ON intel_event_cases(keyword)",
+            "CREATE INDEX IF NOT EXISTS idx_intel_event_cases_last_seen ON intel_event_cases(last_seen_at)",
+            """CREATE TABLE IF NOT EXISTS intel_event_case_threads (
+                id                 SERIAL PRIMARY KEY,
+                event_case_id      TEXT NOT NULL REFERENCES intel_event_cases(id) ON DELETE CASCADE,
+                thread_id          TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+                latest_analysis_id INTEGER REFERENCES analyses(id),
+                first_bound_at     TEXT NOT NULL,
+                last_bound_at      TEXT NOT NULL,
+                UNIQUE(event_case_id, thread_id)
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_intel_event_case_threads_case ON intel_event_case_threads(event_case_id)",
+            """CREATE TABLE IF NOT EXISTS intel_topics (
+                id                 TEXT PRIMARY KEY,
+                scope_key          TEXT NOT NULL,
+                canonical_theme    TEXT NOT NULL,
+                label              TEXT NOT NULL,
+                first_seen_at      TEXT NOT NULL,
+                last_seen_at       TEXT NOT NULL,
+                event_count        INTEGER DEFAULT 0,
+                signal_count       INTEGER DEFAULT 0,
+                sentiment_mix_json TEXT,
+                source_mix_json    TEXT,
+                metadata_json      TEXT,
+                created_at         TIMESTAMPTZ DEFAULT NOW(),
+                updated_at         TIMESTAMPTZ DEFAULT NOW()
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_intel_topics_scope ON intel_topics(scope_key)",
+            "CREATE INDEX IF NOT EXISTS idx_intel_topics_last_seen ON intel_topics(last_seen_at)",
+            """CREATE TABLE IF NOT EXISTS intel_topic_events (
+                id             SERIAL PRIMARY KEY,
+                topic_id       TEXT NOT NULL REFERENCES intel_topics(id) ON DELETE CASCADE,
+                event_case_id  TEXT NOT NULL REFERENCES intel_event_cases(id) ON DELETE CASCADE,
+                first_bound_at TEXT NOT NULL,
+                last_bound_at  TEXT NOT NULL,
+                UNIQUE(topic_id, event_case_id)
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_intel_topic_events_topic ON intel_topic_events(topic_id)",
+            """CREATE TABLE IF NOT EXISTS intel_monthly_snapshots (
+                id                      SERIAL PRIMARY KEY,
+                snapshot_month          TEXT NOT NULL,
+                scope_type              TEXT NOT NULL,
+                scope_key               TEXT NOT NULL,
+                snapshot_at             TEXT NOT NULL,
+                active_risks_json       TEXT,
+                opportunity_topics_json TEXT,
+                top_topics_json         TEXT,
+                competitive_matrix_json TEXT,
+                narrative_summary       TEXT,
+                payload_json            TEXT,
+                UNIQUE(snapshot_month, scope_type, scope_key)
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_intel_monthly_snapshots_month ON intel_monthly_snapshots(snapshot_month)",
             """CREATE TABLE IF NOT EXISTS collector_cache (
                 cache_key    TEXT PRIMARY KEY,
                 payload_json TEXT NOT NULL,
@@ -1965,6 +2246,117 @@ class SentimentDB:
                 (run_id, keyword, track, dashboard_summary, report)
             )
             conn.commit()
+        finally:
+            conn.close()
+
+    # ── Intelligence Layer ──────────────────────────────────
+    def save_intel_event_case(self, payload: Dict[str, Any]) -> str:
+        columns = [
+            "id", "keyword", "canonical_theme", "label", "status", "severity",
+            "first_seen_at", "last_seen_at", "evidence_count", "source_mix_json",
+            "sentiment_mix_json", "metadata_json", "updated_at",
+        ]
+        row = {**payload, "updated_at": self._now_iso()}
+        sql = self._upsert_sql(
+            "intel_event_cases",
+            columns,
+            ["id"],
+            [col for col in columns if col != "id"],
+        )
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(sql, tuple(row.get(col) for col in columns))
+            conn.commit()
+            return str(payload["id"])
+        finally:
+            conn.close()
+
+    def get_intel_event_case(self, case_id: str) -> Optional[Dict[str, Any]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(f"SELECT * FROM intel_event_cases WHERE id = {ph}", (case_id,))
+            return self._adapter.fetchone_dict(c, c.fetchone())
+        finally:
+            conn.close()
+
+    def save_intel_topic(self, payload: Dict[str, Any]) -> str:
+        columns = [
+            "id", "scope_key", "canonical_theme", "label",
+            "first_seen_at", "last_seen_at", "event_count", "signal_count",
+            "sentiment_mix_json", "source_mix_json", "metadata_json", "updated_at",
+        ]
+        row = {**payload, "updated_at": self._now_iso()}
+        sql = self._upsert_sql(
+            "intel_topics",
+            columns,
+            ["id"],
+            [col for col in columns if col != "id"],
+        )
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(sql, tuple(row.get(col) for col in columns))
+            conn.commit()
+            return str(payload["id"])
+        finally:
+            conn.close()
+
+    def get_intel_topic(self, topic_id: str) -> Optional[Dict[str, Any]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(f"SELECT * FROM intel_topics WHERE id = {ph}", (topic_id,))
+            return self._adapter.fetchone_dict(c, c.fetchone())
+        finally:
+            conn.close()
+
+    def save_intel_monthly_snapshot(self, payload: Dict[str, Any]) -> int:
+        columns = [
+            "snapshot_month", "scope_type", "scope_key", "snapshot_at",
+            "active_risks_json", "opportunity_topics_json", "top_topics_json",
+            "competitive_matrix_json", "narrative_summary", "payload_json",
+        ]
+        sql = self._upsert_sql(
+            "intel_monthly_snapshots",
+            columns,
+            ["snapshot_month", "scope_type", "scope_key"],
+            [col for col in columns if col not in {"snapshot_month", "scope_type", "scope_key"}],
+        )
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(sql, tuple(payload.get(col) for col in columns))
+            conn.commit()
+            if self._adapter.is_postgres:
+                c.execute(
+                    f"SELECT id FROM intel_monthly_snapshots WHERE snapshot_month = {self._ph()} AND scope_type = {self._ph()} AND scope_key = {self._ph()}",
+                    (payload["snapshot_month"], payload["scope_type"], payload["scope_key"]),
+                )
+                row = c.fetchone()
+                return int(row[0]) if row else 0
+            c.execute(
+                "SELECT id FROM intel_monthly_snapshots WHERE snapshot_month = ? AND scope_type = ? AND scope_key = ?",
+                (payload["snapshot_month"], payload["scope_type"], payload["scope_key"]),
+            )
+            row = c.fetchone()
+            return int(row[0]) if row else 0
+        finally:
+            conn.close()
+
+    def get_intel_monthly_snapshot(self, snapshot_month: str, scope_type: str, scope_key: str) -> Optional[Dict[str, Any]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"SELECT * FROM intel_monthly_snapshots WHERE snapshot_month = {ph} AND scope_type = {ph} AND scope_key = {ph}",
+                (snapshot_month, scope_type, scope_key),
+            )
+            return self._adapter.fetchone_dict(c, c.fetchone())
         finally:
             conn.close()
 
