@@ -198,6 +198,111 @@ class ThreadsCollector:
                 texts.append(raw.replace('\\"', '"'))
         return " ".join(t.strip() for t in texts if t.strip())
 
+    def _extract_fragments_from_object(self, payload) -> str:
+        if isinstance(payload, dict):
+            fragments = payload.get("fragments")
+            if isinstance(fragments, list):
+                texts = []
+                for fragment in fragments:
+                    if not isinstance(fragment, dict):
+                        continue
+                    plain = fragment.get("plaintext")
+                    if plain:
+                        texts.append(str(plain).strip())
+                return " ".join(text for text in texts if text)
+            for value in payload.values():
+                text = self._extract_fragments_from_object(value)
+                if text:
+                    return text
+            return ""
+        if isinstance(payload, list):
+            texts = [self._extract_fragments_from_object(item) for item in payload]
+            return " ".join(text for text in texts if text)
+        return ""
+
+    def _iter_post_objects(self, payload):
+        if isinstance(payload, dict):
+            has_post_shape = (
+                isinstance(payload.get("username"), str)
+                and isinstance(payload.get("code"), str)
+                and payload.get("taken_at") is not None
+            )
+            if has_post_shape:
+                yield payload
+            for value in payload.values():
+                yield from self._iter_post_objects(value)
+        elif isinstance(payload, list):
+            for item in payload:
+                yield from self._iter_post_objects(item)
+
+    def _parse_search_results_from_json(self, html_text: str, limit: int) -> List[Dict]:
+        rows: List[Dict] = []
+        seen_links = set()
+        script_pattern = re.compile(
+            r"<script[^>]*type=[\"']application/json[\"'][^>]*>(?P<body>.*?)</script>",
+            re.DOTALL | re.IGNORECASE,
+        )
+
+        for match in script_pattern.finditer(html_text):
+            body = html.unescape(match.group("body")).strip()
+            if not body:
+                continue
+            try:
+                payload = json.loads(body)
+            except Exception:
+                continue
+
+            for post in self._iter_post_objects(payload):
+                username = post.get("username") or ""
+                full_name = post.get("full_name") or ""
+                code = post.get("code") or ""
+                content = self._extract_fragments_from_object(post.get("text_post_app_info") or {})
+                if not content:
+                    continue
+
+                try:
+                    taken_at_dt = datetime.fromtimestamp(int(post.get("taken_at")), tz=timezone.utc)
+                except Exception:
+                    continue
+                if not self._is_post_recent_enough(taken_at_dt):
+                    continue
+                if not self._is_threads_relevant(username, full_name, content):
+                    continue
+
+                link = f"https://www.threads.com/@{username}/post/{code}"
+                if link in seen_links:
+                    continue
+                seen_links.add(link)
+
+                row = {
+                    "username": username,
+                    "full_name": full_name,
+                    "link": link,
+                    "content": content,
+                    "title": content[:80],
+                    "published": taken_at_dt.isoformat(timespec="seconds"),
+                    "reply_count": int(post.get("direct_reply_count") or 0),
+                    "repost_count": int(post.get("repost_count") or 0),
+                    "quote_count": int(post.get("quote_count") or 0),
+                    "reshare_count": int(post.get("reshare_count") or 0),
+                    "is_official": self._is_official_account(username, full_name),
+                }
+                rows.append(row)
+
+        rows.sort(
+            key=lambda row: (
+                0 if row["is_official"] else 1,
+                -(
+                    row["reply_count"]
+                    + row["repost_count"] * 2
+                    + row["quote_count"] * 2
+                    + row["reshare_count"]
+                ),
+                row["published"],
+            )
+        )
+        return rows[:limit]
+
     def _has_result_markers(self, html: str) -> bool:
         return all(
             marker in html
@@ -217,6 +322,10 @@ class ThreadsCollector:
         return taken_at >= cutoff
 
     def _parse_search_results(self, html: str, limit: int) -> List[Dict]:
+        json_rows = self._parse_search_results_from_json(html, limit=limit)
+        if json_rows:
+            return json_rows
+
         pattern = re.compile(
             r'"username":"(?P<username>[^"]+)"'
             r'.+?"full_name":"(?P<full_name>[^"]*)"'
