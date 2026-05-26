@@ -54,6 +54,44 @@ SAMPLE_THREADS_SEARCH_HTML = """
 </body></html>
 """.replace("__NOW_TS_1__", str(_NOW_TS)).replace("__NOW_TS_2__", str(_NOW_TS + 60)).replace("__NOW_TS_3__", str(_NOW_TS + 120))
 
+SAMPLE_THREADS_MISMATCH_HTML = """
+<html><body><script type="application/json">
+{
+  "data": [
+    {
+      "username":"7eleventw",
+      "full_name":"7-ELEVEN Taiwan",
+      "code":"OFFICIAL123",
+      "taken_at":__NOW_TS_1__,
+      "caption":{"text":"官方抽獎活動"}
+    },
+    {
+      "username":"user_reporter",
+      "full_name":"一般用戶",
+      "code":"REPORT456",
+      "taken_at":__NOW_TS_2__,
+      "text_post_app_info":{"text_fragments":{"fragments":[{"fragment_type":"plaintext","plaintext":"小七便當打開竟然有寄生蟲在蠕動，幹救命我要吐了 @7eleventw"}]}},
+      "direct_reply_count":99,
+      "repost_count":8,
+      "quote_count":2,
+      "reshare_count":5
+    },
+    {
+      "username":"7eleventw",
+      "full_name":"7-ELEVEN Taiwan",
+      "code":"OFFICIAL123",
+      "taken_at":__NOW_TS_1__,
+      "text_post_app_info":{"text_fragments":{"fragments":[{"fragment_type":"plaintext","plaintext":"官方抽獎活動"}]}},
+      "direct_reply_count":1,
+      "repost_count":0,
+      "quote_count":0,
+      "reshare_count":0
+    }
+  ]
+}
+</script></body></html>
+""".replace("__NOW_TS_1__", str(_NOW_TS)).replace("__NOW_TS_2__", str(_NOW_TS + 60))
+
 
 class ThreadsCollectorConfigTest(unittest.TestCase):
     def test_disables_collection_when_key_absent(self):
@@ -92,6 +130,18 @@ class ThreadsCollectorConfigTest(unittest.TestCase):
         self.assertEqual(rows[0]["author"], "7eleventw")
         self.assertIn("7-11 新品", rows[1]["title"])
         self.assertIn("店員態度", rows[2]["title"])
+
+    def test_parse_search_results_keeps_code_and_content_from_same_post_object(self):
+        with patch.dict(os.environ, {"SCRAPERAPI_KEY": "scraper-key"}, clear=False):
+            collector = ThreadsCollector("7-ELEVEN")
+
+        rows = collector._parse_search_results(SAMPLE_THREADS_MISMATCH_HTML, limit=5)
+
+        self.assertTrue(any(row["link"].endswith("/REPORT456") for row in rows))
+        matched = next(row for row in rows if row["link"].endswith("/REPORT456"))
+        self.assertIn("寄生蟲", matched["content"])
+        self.assertEqual(matched["username"], "user_reporter")
+        self.assertFalse(any(row["link"].endswith("/OFFICIAL123") and "寄生蟲" in row["content"] for row in rows))
 
     def test_ordered_search_terms_prioritize_official_handles(self):
         with patch.dict(os.environ, {"SCRAPERAPI_KEY": "scraper-key"}, clear=False):
