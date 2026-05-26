@@ -2421,6 +2421,34 @@ class SentimentDB:
         finally:
             conn.close()
 
+    def get_intel_topics_for_month(self, snapshot_month: str, scope_key: str) -> List[Dict[str, Any]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            month_expr = "substr(last_seen_at, 1, 7)" if not self._adapter.is_postgres else "substr(last_seen_at, 1, 7)"
+            c.execute(
+                f"SELECT * FROM intel_topics WHERE {month_expr} = {ph} AND scope_key = {ph} ORDER BY signal_count DESC, last_seen_at DESC",
+                (snapshot_month, scope_key),
+            )
+            return self._adapter.fetchall_dict(c)
+        finally:
+            conn.close()
+
+    def get_intel_monthly_competitive_rows(self, snapshot_month: str) -> List[Dict[str, Any]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            month_expr = "substr(last_seen_at, 1, 7)" if not self._adapter.is_postgres else "substr(last_seen_at, 1, 7)"
+            c.execute(
+                f"SELECT scope_key, canonical_theme, signal_count FROM intel_topics WHERE {month_expr} = {ph} ORDER BY canonical_theme ASC, signal_count DESC",
+                (snapshot_month,),
+            )
+            return self._adapter.fetchall_dict(c)
+        finally:
+            conn.close()
+
     def save_intel_monthly_snapshot(self, payload: Dict[str, Any]) -> int:
         columns = [
             "snapshot_month", "scope_type", "scope_key", "snapshot_at",
