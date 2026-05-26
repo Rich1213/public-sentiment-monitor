@@ -124,3 +124,49 @@ Dcard 採集器依賴瀏覽器登入狀態。請依以下步驟取得 Cookie：
 - **AI 模型**：meta/llama-3.3-70b-instruct（via NVIDIA NIM API）
 - **資料庫**：SQLite（WAL 模式）
 - **通知**：Telegram Bot API
+
+---
+
+## Intelligence Layer
+
+除了既有的 `dashboard / 今日監控`，系統現在也支援獨立的 `intelligence / 品牌決策` 資料層。
+
+設計原則：
+
+- `dashboard` 仍然只回答「今天有沒有新訊號」
+- `intelligence` 另外 materialize 長時間的 `event cases`、`topics`、`monthly snapshots`
+- `daily_snapshots` 不會被 intelligence 取代，也不應拿來承載月報語義
+
+### 主要資料層
+
+- `intel_event_cases`
+- `intel_event_case_threads`
+- `intel_topics`
+- `intel_topic_events`
+- `intel_monthly_snapshots`
+
+### API
+
+- `GET /intelligence/topics?days=30&scope_key=7-ELEVEN`
+- `GET /intelligence/topics/{topic_id}`
+- `GET /intelligence/events/{event_case_id}`
+- `GET /intelligence/snapshots/monthly?month=2026-05&scope_key=market`
+
+### 手動投影與快照
+
+先從既有 `threads` / `analyses` 投影 intelligence：
+
+```bash
+python3 scripts/project_intelligence.py --since-date 2026-03-01
+```
+
+建立月度快照：
+
+```bash
+python3 scripts/capture_monthly_intelligence_snapshot.py --month 2026-05
+```
+
+### 前端頁面
+
+- `dashboard.html`：今日監控
+- `intelligence.html`：品牌決策 / 30-90 天議題與月度觀察
