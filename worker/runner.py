@@ -52,10 +52,24 @@ logger = get_logger(__name__)
 # ── 採集與警報設定 ───────────────────────────────────────────────
 DEFAULT_KEYWORDS     = ["7-ELEVEN", "全家", "萊爾富", "OK mart", "超商食安"]
 FETCH_LIMIT          = int(os.getenv("FETCH_LIMIT", "15"))   # 提高以降低漏網率
-INTER_ARTICLE_DELAY  = float(os.getenv("INTER_ARTICLE_DELAY", "1.5"))   # NVIDIA 40 req/min 保護
-INTER_BRAND_COOLDOWN = int(os.getenv("INTER_BRAND_COOLDOWN", "60"))      # 品牌間冷卻（秒）
 
 SENTIMENT_EMOJI = {"正面": "✅", "中立": "⚪", "負面": "🚨"}
+
+
+def _resolve_inter_article_delay() -> float:
+    explicit = os.getenv("INTER_ARTICLE_DELAY")
+    if explicit is not None:
+        return float(explicit)
+    provider = os.getenv("MODEL_SENTIMENT_PROVIDER", "nvidia").strip().lower()
+    return 1.5 if provider == "nvidia" else 0.0
+
+
+def _resolve_inter_brand_cooldown() -> int:
+    explicit = os.getenv("INTER_BRAND_COOLDOWN")
+    if explicit is not None:
+        return int(explicit)
+    provider = os.getenv("MODEL_SENTIMENT_PROVIDER", "nvidia").strip().lower()
+    return 60 if provider == "nvidia" else 0
 
 
 def _local_now() -> datetime:
@@ -136,6 +150,8 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
     from src.collectors.youtube_collector import YouTubeCollector
     from src.analyzers.dashboard_narrator import DashboardNarrator
 
+    inter_article_delay = _resolve_inter_article_delay()
+
     _print_sep("═")
     print(f"  🏪 {keyword}  [{_local_now().strftime('%Y-%m-%d %H:%M')}]")
     _print_sep("═")
@@ -192,7 +208,7 @@ def run_monitor(keyword: str, db, analyzer, advisor, notifier, fresh_mode: bool 
 
         for i, article in enumerate(all_articles, 1):
             if i > 1:
-                time.sleep(INTER_ARTICLE_DELAY)   # 控制 NVIDIA API 速率（40 req/min）
+                time.sleep(inter_article_delay)
             try:
                 analysis = analyzer.analyze(article["title"], article.get("content", ""))
             except Exception as e:
@@ -407,6 +423,8 @@ def run_all_brands(
         notifier = None
 
     if print_banner:
+        inter_article_delay = _resolve_inter_article_delay()
+        inter_brand_cooldown = _resolve_inter_brand_cooldown()
         if cleaned:
             print(f"  已自動關閉 {cleaned} 筆逾時未結束的舊 run")
         _print_banner()
@@ -415,15 +433,18 @@ def run_all_brands(
         print(f"  資料來源：Google News, PTT, Dcard, Threads")
         print(f"  採集上限：每渠道 {FETCH_LIMIT} 篇")
         print(f"  警報閾值：負面強度 ≥ {ALERT_THRESHOLD}")
+        print(f"  逐篇 AI 冷卻：{inter_article_delay}s")
+        print(f"  品牌間冷卻：{inter_brand_cooldown}s")
         print(f"  重新採集：{'是（忽略去重）' if fresh_mode else '否（跳過已採集）'}")
         print(f"  執行時間：{_local_now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     batch_status = "completed"
     try:
+        inter_brand_cooldown = _resolve_inter_brand_cooldown()
         for idx, keyword in enumerate(keywords):
-            if idx > 0:
-                print(f"\n  ⏳ 品牌間冷卻 {INTER_BRAND_COOLDOWN}s（保護 NVIDIA API 速率限制）...")
-                time.sleep(INTER_BRAND_COOLDOWN)
+            if idx > 0 and inter_brand_cooldown > 0:
+                print(f"\n  ⏳ 品牌間冷卻 {inter_brand_cooldown}s（保護上游 API 速率限制）...")
+                time.sleep(inter_brand_cooldown)
             try:
                 run_monitor(
                     keyword=keyword,

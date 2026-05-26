@@ -258,7 +258,11 @@ class ThreadsCollectorConfigTest(unittest.TestCase):
         self.assertEqual(rows, [])
 
     def test_fetch_latest_posts_stops_after_collecting_enough_unique_candidates(self):
-        with patch.dict(os.environ, {"SCRAPERAPI_KEY": "scraper-key"}, clear=False):
+        with patch.dict(
+            os.environ,
+            {"SCRAPERAPI_KEY": "scraper-key", "THREADS_SEARCH_MAX_WORKERS": "2"},
+            clear=False,
+        ):
             collector = ThreadsCollector("7-ELEVEN")
 
         batch_one = [
@@ -351,6 +355,19 @@ class ThreadsCollectorConfigTest(unittest.TestCase):
 
         self.assertEqual(len(rows), 3)
         self.assertEqual(collector._fetch_search_results.call_count, 2)
+
+    def test_search_max_workers_defaults_and_minimum(self):
+        with patch.dict(os.environ, {"SCRAPERAPI_KEY": "scraper-key"}, clear=False):
+            collector = ThreadsCollector("7-ELEVEN")
+        self.assertEqual(collector._search_max_workers, 2)
+
+        with patch.dict(
+            os.environ,
+            {"SCRAPERAPI_KEY": "scraper-key", "THREADS_SEARCH_MAX_WORKERS": "0"},
+            clear=False,
+        ):
+            collector = ThreadsCollector("7-ELEVEN")
+        self.assertEqual(collector._search_max_workers, 1)
 
     def test_fetch_latest_posts_uses_cached_search_results_within_ttl(self):
         fd, path = tempfile.mkstemp(suffix=".db")

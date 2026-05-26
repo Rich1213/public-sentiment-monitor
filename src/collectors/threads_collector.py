@@ -14,6 +14,7 @@ import os
 import re
 import html
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
@@ -46,6 +47,10 @@ class ThreadsCollector:
             self._max_post_age_days = max(0, int(os.getenv("THREADS_MAX_POST_AGE_DAYS", "45")))
         except ValueError:
             self._max_post_age_days = 45
+        try:
+            self._search_max_workers = max(1, int(os.getenv("THREADS_SEARCH_MAX_WORKERS", "2")))
+        except ValueError:
+            self._search_max_workers = 2
 
         if self._scraperapi_key:
             print("  [Threads] 使用 ScraperAPI 模式")
@@ -343,14 +348,33 @@ class ThreadsCollector:
             seen_links = set()
             per_term_limit = max(limit, 5)
             target_candidates = max(limit * 2, limit)
-            for term_index, term in enumerate(ordered_terms):
-                for row in self._fetch_search_results(term, limit=per_term_limit):
-                    if row["link"] in seen_links:
-                        continue
-                    seen_links.add(row["link"])
-                    merged.append(row)
+            processed_terms = 0
+            for batch_start in range(0, len(ordered_terms), self._search_max_workers):
+                batch_terms = ordered_terms[batch_start: batch_start + self._search_max_workers]
+                batch_results: Dict[str, List[Dict]] = {term: [] for term in batch_terms}
+                with ThreadPoolExecutor(max_workers=self._search_max_workers) as executor:
+                    future_to_term = {
+                        executor.submit(self._fetch_search_results, term, per_term_limit): term
+                        for term in batch_terms
+                    }
+                    for future in as_completed(future_to_term):
+                        term = future_to_term[future]
+                        try:
+                            batch_results[term] = future.result()
+                        except Exception as e:
+                            print(f"  [Threads/search] 「{term}」失敗：{e}")
+                            batch_results[term] = []
+
+                for term in batch_terms:
+                    for row in batch_results[term]:
+                        if row["link"] in seen_links:
+                            continue
+                        seen_links.add(row["link"])
+                        merged.append(row)
+
+                processed_terms += len(batch_terms)
                 # Threads 搜尋 render=true 很慢；至少跑兩個 term 後，候選夠用就先停。
-                if len(merged) >= target_candidates and term_index >= 1:
+                if len(merged) >= target_candidates and processed_terms >= 2:
                     print(f"  [Threads] 候選已達 {len(merged)} 篇，提前停止後續搜尋詞")
                     break
             merged.sort(
