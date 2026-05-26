@@ -83,6 +83,22 @@ class DashboardTodayResponse(BaseModel):
     empty_snapshot: Optional[dict] = None
 
 
+class IntelligenceTopicsResponse(BaseModel):
+    topics: list
+    count: int
+
+
+class IntelligenceSnapshotResponse(BaseModel):
+    snapshot_month: str
+    scope_type: str
+    scope_key: str
+    top_topics: list
+    active_risks: list
+    opportunities: list
+    competitive_matrix: dict
+    narrative_summary: Optional[str] = None
+
+
 # ─────────────────────────────────────────────────────────────
 # 背景任務執行器
 # ─────────────────────────────────────────────────────────────
@@ -193,6 +209,82 @@ def capture_snapshot(
         return {"status": "ok", "snapshot_date": date or datetime.now().strftime("%Y-%m-%d"), "written": written}
     except Exception as e:
         logger.error("建立 snapshot 失敗：%s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/intelligence/topics", response_model=IntelligenceTopicsResponse, tags=["Intelligence"])
+def intelligence_topics(
+    days: int = Query(default=30, ge=7, le=365, description="回看天數"),
+    scope_key: Optional[str] = Query(default=None, description="指定品牌或 market"),
+):
+    db = SentimentDB()
+    try:
+        rows = db.get_intel_topics(scope_key=scope_key, days=days)
+        return {"topics": rows, "count": len(rows)}
+    except Exception as e:
+        logger.error("查詢 intelligence topics 失敗：%s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/intelligence/topics/{topic_id}", tags=["Intelligence"])
+def intelligence_topic_detail(topic_id: str):
+    db = SentimentDB()
+    try:
+        topic = db.get_intel_topic(topic_id)
+        if not topic:
+            raise HTTPException(status_code=404, detail=f"Topic {topic_id} 不存在")
+        events = db.get_intel_topic_events(topic_id)
+        return {"topic": topic, "events": events}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("查詢 intelligence topic %s 失敗：%s", topic_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/intelligence/events/{event_case_id}", tags=["Intelligence"])
+def intelligence_event_detail(event_case_id: str):
+    db = SentimentDB()
+    try:
+        event_case = db.get_intel_event_case(event_case_id)
+        if not event_case:
+            raise HTTPException(status_code=404, detail=f"Event case {event_case_id} 不存在")
+        threads = db.get_intel_event_case_threads(event_case_id)
+        return {"event_case": event_case, "threads": threads}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("查詢 intelligence event %s 失敗：%s", event_case_id, e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/intelligence/snapshots/monthly", response_model=IntelligenceSnapshotResponse, tags=["Intelligence"])
+def intelligence_monthly_snapshot(
+    month: str = Query(..., description="月份 YYYY-MM"),
+    scope_key: str = Query(..., description="指定品牌或 market"),
+):
+    db = SentimentDB()
+    scope_type = "market" if scope_key == "market" else "brand"
+    try:
+        row = db.get_intel_monthly_snapshot(month, scope_type, scope_key)
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Monthly snapshot {month}/{scope_key} 不存在")
+        import json
+
+        return {
+            "snapshot_month": row["snapshot_month"],
+            "scope_type": row["scope_type"],
+            "scope_key": row["scope_key"],
+            "top_topics": json.loads(row.get("top_topics_json") or "[]"),
+            "active_risks": json.loads(row.get("active_risks_json") or "[]"),
+            "opportunities": json.loads(row.get("opportunity_topics_json") or "[]"),
+            "competitive_matrix": json.loads(row.get("competitive_matrix_json") or "{}"),
+            "narrative_summary": row.get("narrative_summary"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("查詢 intelligence monthly snapshot 失敗：%s", e, exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
