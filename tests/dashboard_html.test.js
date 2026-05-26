@@ -42,3 +42,8 @@ test('main target brand KPI remains static and is not reassigned from runtime br
   assert.match(html, /id="kpi-brand">7-ELEVEN<\/div>/);
   assert.doesNotMatch(html, /document\.getElementById\('kpi-brand'\)\.textContent\s*=/);
 });
+
+test('dashboard contract stays focused on daily monitoring routes and excludes intelligence routes', () => {
+  assert.match(html, /fetch\(`\$\{API\}\/dashboard\/today`\)/);
+  assert.doesNotMatch(html, /\/intelligence\//);
+});

@@ -84,6 +84,28 @@ class DashboardTodayTest(unittest.TestCase):
         self.assertEqual(summary["brand_map"]["7-ELEVEN"]["total"], 1)
         self.assertEqual(len(summary["all_alerts"]), 1)
 
+    def test_dashboard_day_summary_response_shape_stays_stable(self):
+        run_id = self.db.create_run("7-ELEVEN")
+        self._seed_analysis(run_id, "7-ELEVEN", "https://example.com/post-shape", "測試文章")
+        self.db.close_run(run_id, articles_found=1, articles_new=1)
+
+        summary = self.db.get_dashboard_day_summary()
+
+        self.assertEqual(
+            set(summary.keys()),
+            {
+                "snapshot_date",
+                "updated_at",
+                "latest_run_at",
+                "active_batch",
+                "brand_map",
+                "channel_counts",
+                "all_alerts",
+                "total_articles",
+                "empty_snapshot",
+            },
+        )
+
     def test_dashboard_day_summary_uses_latest_completed_run_per_keyword(self):
         older_run = self.db.create_run("7-ELEVEN")
         newer_run = self.db.create_run("7-ELEVEN")
