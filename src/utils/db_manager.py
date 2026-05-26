@@ -2366,6 +2366,61 @@ class SentimentDB:
         finally:
             conn.close()
 
+    def get_intel_topics(self, scope_key: Optional[str] = None, days: int = 30) -> List[Dict[str, Any]]:
+        cutoff = (
+            datetime.now(ZoneInfo(APP_TIMEZONE)) - timedelta(days=days)
+        ).isoformat()
+        ph = self._ph()
+        sql = f"SELECT * FROM intel_topics WHERE last_seen_at >= {ph}"
+        params: List[Any] = [cutoff]
+        if scope_key:
+            sql += f" AND scope_key = {ph}"
+            params.append(scope_key)
+        sql += " ORDER BY signal_count DESC, last_seen_at DESC"
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(sql, tuple(params))
+            return self._adapter.fetchall_dict(c)
+        finally:
+            conn.close()
+
+    def bind_event_case_to_intel_topic(
+        self,
+        topic_id: str,
+        event_case_id: str,
+        first_bound_at: str,
+        last_bound_at: str,
+    ) -> int:
+        columns = ["topic_id", "event_case_id", "first_bound_at", "last_bound_at"]
+        sql = self._upsert_sql(
+            "intel_topic_events",
+            columns,
+            ["topic_id", "event_case_id"],
+            ["first_bound_at", "last_bound_at"],
+        )
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(sql, (topic_id, event_case_id, first_bound_at, last_bound_at))
+            conn.commit()
+            return self._adapter.last_insert_id(c) if not self._adapter.is_postgres else 1
+        finally:
+            conn.close()
+
+    def get_intel_topic_events(self, topic_id: str) -> List[Dict[str, Any]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"SELECT * FROM intel_topic_events WHERE topic_id = {ph} ORDER BY event_case_id ASC",
+                (topic_id,),
+            )
+            return self._adapter.fetchall_dict(c)
+        finally:
+            conn.close()
+
     def save_intel_monthly_snapshot(self, payload: Dict[str, Any]) -> int:
         columns = [
             "snapshot_month", "scope_type", "scope_key", "snapshot_at",
