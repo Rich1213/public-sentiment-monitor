@@ -2282,6 +2282,58 @@ class SentimentDB:
         finally:
             conn.close()
 
+    def get_intel_event_cases(self, since_date: str) -> List[Dict[str, Any]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"SELECT * FROM intel_event_cases WHERE last_seen_at >= {ph} ORDER BY last_seen_at DESC, severity DESC",
+                (since_date,),
+            )
+            return self._adapter.fetchall_dict(c)
+        finally:
+            conn.close()
+
+    def bind_thread_to_intel_event_case(
+        self,
+        event_case_id: str,
+        thread_id: str,
+        latest_analysis_id: int,
+        first_bound_at: str,
+        last_bound_at: str,
+    ) -> int:
+        columns = [
+            "event_case_id", "thread_id", "latest_analysis_id", "first_bound_at", "last_bound_at"
+        ]
+        sql = self._upsert_sql(
+            "intel_event_case_threads",
+            columns,
+            ["event_case_id", "thread_id"],
+            ["latest_analysis_id", "first_bound_at", "last_bound_at"],
+        )
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(sql, (event_case_id, thread_id, latest_analysis_id, first_bound_at, last_bound_at))
+            conn.commit()
+            return self._adapter.last_insert_id(c) if not self._adapter.is_postgres else 1
+        finally:
+            conn.close()
+
+    def get_intel_event_case_threads(self, event_case_id: str) -> List[Dict[str, Any]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"SELECT * FROM intel_event_case_threads WHERE event_case_id = {ph} ORDER BY thread_id ASC",
+                (event_case_id,),
+            )
+            return self._adapter.fetchall_dict(c)
+        finally:
+            conn.close()
+
     def save_intel_topic(self, payload: Dict[str, Any]) -> str:
         columns = [
             "id", "scope_key", "canonical_theme", "label",
@@ -2357,6 +2409,33 @@ class SentimentDB:
                 (snapshot_month, scope_type, scope_key),
             )
             return self._adapter.fetchone_dict(c, c.fetchone())
+        finally:
+            conn.close()
+
+    def get_intelligence_signal_rows(self, since_date: str) -> List[Dict[str, Any]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"""
+                SELECT
+                    a.id AS analysis_id,
+                    a.thread_id,
+                    t.keyword,
+                    t.channel,
+                    a.sentiment,
+                    a.score,
+                    a.theme,
+                    COALESCE(t.published_at, a.analyzed_at) AS published_at
+                FROM analyses a
+                JOIN threads t ON t.id = a.thread_id
+                WHERE COALESCE(t.published_at, a.analyzed_at) >= {ph}
+                ORDER BY COALESCE(t.published_at, a.analyzed_at) ASC
+                """,
+                (since_date,),
+            )
+            return self._adapter.fetchall_dict(c)
         finally:
             conn.close()
 
