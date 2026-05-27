@@ -1,4 +1,5 @@
 import json
+from datetime import date, datetime
 from typing import Dict, List
 
 from src.intelligence.topic_builder import TopicBuilder
@@ -20,12 +21,12 @@ class MonthlySnapshotBuilder:
             "scope_type": scope_type,
             "scope_key": scope_key,
             "snapshot_at": self.db._now_iso(),
-            "active_risks_json": json.dumps(active_risks, ensure_ascii=False),
-            "opportunity_topics_json": json.dumps(opportunities, ensure_ascii=False),
-            "top_topics_json": json.dumps(top_topics, ensure_ascii=False),
+            "active_risks_json": json.dumps(self._json_ready(active_risks), ensure_ascii=False),
+            "opportunity_topics_json": json.dumps(self._json_ready(opportunities), ensure_ascii=False),
+            "top_topics_json": json.dumps(self._json_ready(top_topics), ensure_ascii=False),
             "competitive_matrix_json": json.dumps(self._competitive_matrix(snapshot_month), ensure_ascii=False),
             "narrative_summary": self._narrative_summary(scope_key, top_topics),
-            "payload_json": json.dumps({"topics": topics}, ensure_ascii=False),
+            "payload_json": json.dumps({"topics": self._json_ready(topics)}, ensure_ascii=False),
         }
 
     def _top_topics(self, topics: List[Dict]) -> List[Dict]:
@@ -51,3 +52,12 @@ class MonthlySnapshotBuilder:
         if not labels:
             return f"{scope_key} 本月尚無足夠 intelligence 議題資料。"
         return f"{scope_key} 本月主要由 {'、'.join(labels)} 定義，建議同時檢查風險延燒與可承接的內容機會。"
+
+    def _json_ready(self, value):
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+        if isinstance(value, list):
+            return [self._json_ready(item) for item in value]
+        if isinstance(value, dict):
+            return {key: self._json_ready(item) for key, item in value.items()}
+        return value

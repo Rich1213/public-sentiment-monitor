@@ -1,9 +1,11 @@
 import hashlib
 import json
 from datetime import datetime, timedelta
+from email.utils import parsedate_to_datetime
 from typing import Dict, List
+from zoneinfo import ZoneInfo
 
-from src.utils.db_manager import SentimentDB
+from src.utils.db_manager import APP_TIMEZONE, SentimentDB
 
 
 class EventCaseBuilder:
@@ -59,7 +61,14 @@ class EventCaseBuilder:
         return len(cases)
 
     def _parse_dt(self, value: str) -> datetime:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        text = str(value).strip()
+        try:
+            dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except ValueError:
+            dt = parsedate_to_datetime(text)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo(APP_TIMEZONE))
+        return dt.astimezone(ZoneInfo(APP_TIMEZONE))
 
     def _materialize_case(self, keyword: str, theme: str, cluster_start: datetime, rows: List[Dict]) -> Dict:
         first_seen_at = rows[0]["published_at"]

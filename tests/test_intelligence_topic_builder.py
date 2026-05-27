@@ -26,9 +26,13 @@ class TopicBuilderTest(unittest.TestCase):
 
         topics = self.builder.build_topics(event_cases)
 
-        self.assertEqual(len(topics), 1)
-        self.assertEqual(topics[0]["event_count"], 2)
-        self.assertEqual(topics[0]["signal_count"], 5)
+        self.assertEqual(len(topics), 2)
+        brand_topic = next(topic for topic in topics if topic["scope_key"] == "7-ELEVEN")
+        market_topic = next(topic for topic in topics if topic["scope_key"] == "market")
+        self.assertEqual(brand_topic["event_count"], 2)
+        self.assertEqual(brand_topic["signal_count"], 5)
+        self.assertEqual(market_topic["event_count"], 2)
+        self.assertEqual(market_topic["signal_count"], 5)
 
     def test_competitive_matrix_separates_brand_scopes(self):
         rows = [
@@ -77,11 +81,15 @@ class TopicBuilderTest(unittest.TestCase):
 
         written = self.builder.project_recent_topics(since_date="2026-05-01")
 
-        self.assertEqual(written, 1)
+        self.assertEqual(written, 2)
         topics = self.db.get_intel_topics(scope_key="7-ELEVEN", days=30)
         self.assertEqual(len(topics), 1)
         bindings = self.db.get_intel_topic_events(topics[0]["id"])
         self.assertEqual({row["event_case_id"] for row in bindings}, {"evt_001", "evt_002"})
+        market_topics = self.db.get_intel_topics(scope_key="market", days=30)
+        self.assertEqual(len(market_topics), 1)
+        market_bindings = self.db.get_intel_topic_events(market_topics[0]["id"])
+        self.assertEqual({row["event_case_id"] for row in market_bindings}, {"evt_001", "evt_002"})
 
 
 if __name__ == "__main__":
