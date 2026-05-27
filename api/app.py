@@ -13,6 +13,7 @@ api/app.py — FastAPI Web 服務
 """
 
 import os
+import json
 import logging
 from datetime import datetime
 from typing import List, Optional
@@ -24,6 +25,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from src.jobs.daily_classified_report_job import resolve_report_date
 from src.utils.db_manager import SentimentDB
 
 logger = logging.getLogger(__name__)
@@ -97,6 +99,27 @@ class IntelligenceSnapshotResponse(BaseModel):
     opportunities: list
     competitive_matrix: dict
     narrative_summary: Optional[str] = None
+
+
+class DailyReportSectionResponse(BaseModel):
+    section_key: str
+    section_label: str
+    signal_count: int
+    pos_count: int
+    neu_count: int
+    neg_count: int
+    high_risk_count: int
+    summary_text: Optional[str] = None
+    top_threads: list
+    evidence_quotes: list
+
+
+class DailyReportResponse(BaseModel):
+    report_date: str
+    scope_type: str
+    scope_key: str
+    headline_summary: Optional[str] = None
+    sections: List[DailyReportSectionResponse]
 
 
 # ─────────────────────────────────────────────────────────────
@@ -212,6 +235,46 @@ def capture_snapshot(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/daily-report", response_model=DailyReportResponse, tags=["Daily Report"])
+def daily_report(
+    date: Optional[str] = Query(default=None, description="日期 YYYY-MM-DD，預設昨天"),
+    scope_key: str = Query(default="7-ELEVEN", description="主品牌"),
+):
+    db = SentimentDB()
+    report_date = date or resolve_report_date()
+    try:
+        report = db.get_intel_daily_report(report_date, "brand", scope_key)
+        if not report:
+            raise HTTPException(status_code=404, detail=f"Daily report {report_date}/{scope_key} 不存在")
+        sections = db.get_intel_daily_report_sections(report_date, scope_key)
+        return {
+            "report_date": report["report_date"],
+            "scope_type": report["scope_type"],
+            "scope_key": report["scope_key"],
+            "headline_summary": report.get("headline_summary"),
+            "sections": [
+                {
+                    "section_key": row["section_key"],
+                    "section_label": row["section_label"],
+                    "signal_count": int(row.get("signal_count") or 0),
+                    "pos_count": int(row.get("pos_count") or 0),
+                    "neu_count": int(row.get("neu_count") or 0),
+                    "neg_count": int(row.get("neg_count") or 0),
+                    "high_risk_count": int(row.get("high_risk_count") or 0),
+                    "summary_text": row.get("summary_text"),
+                    "top_threads": json.loads(row.get("top_threads_json") or "[]"),
+                    "evidence_quotes": json.loads(row.get("evidence_quotes_json") or "[]"),
+                }
+                for row in sections
+            ],
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("查詢 daily report 失敗：%s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/intelligence/topics", response_model=IntelligenceTopicsResponse, tags=["Intelligence"])
 def intelligence_topics(
     days: int = Query(default=30, ge=7, le=365, description="回看天數"),
@@ -269,8 +332,6 @@ def intelligence_monthly_snapshot(
         row = db.get_intel_monthly_snapshot(month, scope_type, scope_key)
         if not row:
             raise HTTPException(status_code=404, detail=f"Monthly snapshot {month}/{scope_key} 不存在")
-        import json
-
         return {
             "snapshot_month": row["snapshot_month"],
             "scope_type": row["scope_type"],

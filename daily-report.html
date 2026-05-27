@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>昨日分類日報</title>
+<link rel="icon" href="data:,">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Noto+Sans+TC:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Noto Sans TC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #eef2f6; color: #1e293b; min-height: 100vh; }
+  .app { max-width: 1320px; margin: 0 auto; padding: 24px; }
+  .topbar { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; background: #ffffff; border: 1px solid #dbe4ef; border-radius: 18px; margin-bottom: 18px; box-shadow: 0 8px 24px rgba(15,23,42,0.05); }
+  .logo { display: flex; align-items: center; gap: 12px; }
+  .logo-icon { width: 36px; height: 36px; background: linear-gradient(135deg, #0f766e, #1d4ed8); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px; color: white; }
+  .logo-text { font-size: 18px; font-weight: 700; color: #0f172a; }
+  .logo-sub { font-size: 13px; color: #94a3b8; margin-top: 2px; }
+  .topbar-right { display:flex; align-items:center; gap:12px; }
+  .nav-tabs { display:flex; gap:8px; }
+  .nav-link { text-decoration:none; font-size:14px; font-weight:700; color:#475569; padding:8px 14px; border-radius:10px; border:1px solid #dbe4ef; background:#f8fafc; }
+  .nav-link.active { background:#0f766e; color:white; border-color:#0f766e; }
+  .hero { display:grid; grid-template-columns: 1.3fr 1fr; gap:16px; margin-bottom:18px; }
+  .card { background:#ffffff; border:1px solid #dbe4ef; border-radius:18px; padding:20px 22px; box-shadow:0 8px 26px rgba(15,23,42,0.05); }
+  .hero-card { background: linear-gradient(180deg, #0f172a 0%, #111827 100%); color:#f8fafc; border:none; }
+  .hero-card h1 { font-size:36px; font-weight:900; margin-bottom:10px; }
+  .hero-card p { color:#cbd5e1; line-height:1.9; font-size:15px; }
+  .section-title { font-size:15px; font-weight:700; color:#64748b; margin-bottom:12px; display:flex; align-items:center; gap:8px; }
+  .kpi-big { font-family:"Bebas Neue", sans-serif; font-size:68px; line-height:0.9; }
+  .kpi-sub { color:#94a3b8; margin-top:10px; font-size:14px; }
+  .section-grid { display:grid; gap:16px; }
+  .section-card { border:1px solid #dbe4ef; border-radius:18px; background:#ffffff; padding:20px 22px; box-shadow:0 8px 26px rgba(15,23,42,0.05); }
+  .section-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:10px; }
+  .section-name { font-size:22px; font-weight:900; color:#0f172a; }
+  .section-count { font-size:14px; color:#64748b; font-weight:700; }
+  .section-mix { font-size:14px; color:#64748b; margin-bottom:12px; }
+  .summary-box { background:#f8fafc; border:1px solid #e2e8f0; border-radius:14px; padding:14px 16px; color:#334155; line-height:1.9; margin-bottom:14px; }
+  .mini-grid { display:grid; grid-template-columns: 1.3fr 1fr; gap:14px; }
+  .thread-list, .quote-list { display:grid; gap:10px; }
+  .thread-item, .quote-item { border:1px solid #e2e8f0; border-radius:14px; padding:12px 14px; background:#fbfdff; }
+  .thread-link { color:#0f172a; text-decoration:none; font-weight:700; line-height:1.7; }
+  .thread-link:hover { text-decoration:underline; }
+  .thread-meta, .quote-meta { color:#64748b; font-size:13px; margin-top:6px; line-height:1.7; }
+  .quote-text { color:#334155; line-height:1.8; }
+  .empty { color:#94a3b8; font-size:14px; line-height:1.8; }
+  @media (max-width: 900px) {
+    .hero, .mini-grid { grid-template-columns: 1fr; }
+    .topbar { flex-direction:column; align-items:flex-start; gap:10px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="topbar">
+    <div class="logo">
+      <div class="logo-icon">◔</div>
+      <div>
+        <div class="logo-text">昨日分類日報</div>
+        <div class="logo-sub">Yesterday Report · 按分類整理主品牌昨日輿情</div>
+      </div>
+    </div>
+    <div class="topbar-right">
+      <nav class="nav-tabs">
+        <a class="nav-link" href="./dashboard.html">今日監控</a>
+        <a class="nav-link active" href="./daily-report.html">昨日日報</a>
+        <a class="nav-link" href="./intelligence.html">品牌決策</a>
+      </nav>
+    </div>
+  </div>
+
+  <div class="hero">
+    <div class="card hero-card">
+      <h1>昨日分類日報</h1>
+      <p id="daily-report-headline">載入中…</p>
+    </div>
+    <div class="card">
+      <div class="section-title">昨日重點分類數</div>
+      <div class="kpi-big" id="daily-report-section-count">—</div>
+      <div class="kpi-sub" id="daily-report-meta">等待日報 API</div>
+    </div>
+  </div>
+
+  <div id="daily-report-sections" class="section-grid">
+    <div class="card"><div class="empty">載入中…</div></div>
+  </div>
+</div>
+
+<script src="./daily_report_summary.js"></script>
+<script>
+const API = new URLSearchParams(window.location.search).get('api')
+  || localStorage.getItem('psm-api')
+  || 'https://web-production-7a3df.up.railway.app';
+const scopeKey = new URLSearchParams(window.location.search).get('scope_key') || '7-ELEVEN';
+const date = new URLSearchParams(window.location.search).get('date') || '';
+const { formatMix, topThreadLabel } = window.DailyReportSummary;
+
+function renderSections(sections) {
+  const root = document.getElementById('daily-report-sections');
+  if (!sections || sections.length === 0) {
+    root.innerHTML = '<div class="card"><div class="empty">昨日尚無可顯示的分類日報。</div></div>';
+    return;
+  }
+  root.innerHTML = sections.map(section => `
+    <div class="section-card">
+      <div class="section-head">
+        <div>
+          <div class="section-name">${section.section_label}</div>
+          <div class="section-count">訊號 ${section.signal_count}｜高風險 ${section.high_risk_count}</div>
+        </div>
+      </div>
+      <div class="section-mix">${formatMix(section)}</div>
+      <div class="summary-box">${section.summary_text || '尚無重點觀察。'}</div>
+      <div class="mini-grid">
+        <div>
+          <div class="section-title">代表文章</div>
+          <div class="thread-list">
+            ${(section.top_threads || []).map(thread => `
+              <div class="thread-item">
+                <a class="thread-link" href="${thread.url}" target="_blank" rel="noopener noreferrer">${thread.title || '未命名文章'}</a>
+                <div class="thread-meta">${topThreadLabel(thread)}｜分數 ${thread.score || 0}</div>
+              </div>
+            `).join('') || '<div class="empty">尚無代表文章。</div>'}
+          </div>
+        </div>
+        <div>
+          <div class="section-title">代表推文 / 留言摘錄</div>
+          <div class="quote-list">
+            ${(section.evidence_quotes || []).map(item => `
+              <div class="quote-item">
+                <div class="quote-text">「${item.quote || ''}」</div>
+                <div class="quote-meta">${item.author || '匿名'}｜${item.sentiment || '未知'}｜分數 ${item.score || 0}</div>
+              </div>
+            `).join('') || '<div class="empty">尚無留言舉證。</div>'}
+          </div>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function loadDailyReport() {
+  const query = new URLSearchParams();
+  if (date) query.set('date', date);
+  query.set('scope_key', scopeKey);
+  const resp = await fetch(`${API}/daily-report?${query.toString()}`);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const body = await resp.json();
+  document.getElementById('daily-report-headline').textContent = body.headline_summary || '尚無日報摘要';
+  document.getElementById('daily-report-section-count').textContent = body.sections.length;
+  document.getElementById('daily-report-meta').textContent = `${body.scope_key}｜${body.report_date}`;
+  renderSections(body.sections || []);
+}
+
+loadDailyReport().catch(() => {
+  document.getElementById('daily-report-headline').textContent = '日報 API 連線失敗';
+  document.getElementById('daily-report-meta').textContent = `${scopeKey}｜請先建立昨日日報`;
+  renderSections([]);
+});
+</script>
+</body>
+</html>

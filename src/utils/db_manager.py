@@ -362,6 +362,33 @@ class SentimentDB:
                     UNIQUE(snapshot_month, scope_type, scope_key)
                 )""")
                 c.execute("CREATE INDEX IF NOT EXISTS idx_intel_monthly_snapshots_month ON intel_monthly_snapshots(snapshot_month)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_daily_reports (
+                    report_date      TEXT NOT NULL,
+                    scope_type       TEXT NOT NULL,
+                    scope_key        TEXT NOT NULL,
+                    snapshot_at      TEXT NOT NULL,
+                    headline_summary TEXT,
+                    payload_json     TEXT,
+                    PRIMARY KEY (report_date, scope_type, scope_key)
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_daily_reports_scope ON intel_daily_reports(scope_key, report_date)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_daily_report_sections (
+                    report_date          TEXT NOT NULL,
+                    scope_key            TEXT NOT NULL,
+                    section_key          TEXT NOT NULL,
+                    section_label        TEXT NOT NULL,
+                    signal_count         INTEGER DEFAULT 0,
+                    pos_count            INTEGER DEFAULT 0,
+                    neu_count            INTEGER DEFAULT 0,
+                    neg_count            INTEGER DEFAULT 0,
+                    high_risk_count      INTEGER DEFAULT 0,
+                    summary_text         TEXT,
+                    top_threads_json     TEXT,
+                    evidence_quotes_json TEXT,
+                    payload_json         TEXT,
+                    PRIMARY KEY (report_date, scope_key, section_key)
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_daily_report_sections_scope ON intel_daily_report_sections(scope_key, report_date)")
                 c.execute("""CREATE TABLE IF NOT EXISTS collector_cache (
                     cache_key    TEXT PRIMARY KEY,
                     payload_json TEXT NOT NULL,
@@ -489,6 +516,33 @@ class SentimentDB:
                     UNIQUE(snapshot_month, scope_type, scope_key)
                 )""")
                 c.execute("CREATE INDEX IF NOT EXISTS idx_intel_monthly_snapshots_month ON intel_monthly_snapshots(snapshot_month)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_daily_reports (
+                    report_date      TEXT NOT NULL,
+                    scope_type       TEXT NOT NULL,
+                    scope_key        TEXT NOT NULL,
+                    snapshot_at      TEXT NOT NULL,
+                    headline_summary TEXT,
+                    payload_json     TEXT,
+                    PRIMARY KEY (report_date, scope_type, scope_key)
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_daily_reports_scope ON intel_daily_reports(scope_key, report_date)")
+                c.execute("""CREATE TABLE IF NOT EXISTS intel_daily_report_sections (
+                    report_date          TEXT NOT NULL,
+                    scope_key            TEXT NOT NULL,
+                    section_key          TEXT NOT NULL,
+                    section_label        TEXT NOT NULL,
+                    signal_count         INTEGER DEFAULT 0,
+                    pos_count            INTEGER DEFAULT 0,
+                    neu_count            INTEGER DEFAULT 0,
+                    neg_count            INTEGER DEFAULT 0,
+                    high_risk_count      INTEGER DEFAULT 0,
+                    summary_text         TEXT,
+                    top_threads_json     TEXT,
+                    evidence_quotes_json TEXT,
+                    payload_json         TEXT,
+                    PRIMARY KEY (report_date, scope_key, section_key)
+                )""")
+                c.execute("CREATE INDEX IF NOT EXISTS idx_intel_daily_report_sections_scope ON intel_daily_report_sections(scope_key, report_date)")
                 c.execute("""CREATE TABLE IF NOT EXISTS collector_cache (
                     cache_key    TEXT PRIMARY KEY,
                     payload_json TEXT NOT NULL,
@@ -722,6 +776,35 @@ class SentimentDB:
             );
             CREATE INDEX IF NOT EXISTS idx_intel_monthly_snapshots_month ON intel_monthly_snapshots(snapshot_month);
 
+            CREATE TABLE IF NOT EXISTS intel_daily_reports (
+                report_date      TEXT NOT NULL,
+                scope_type       TEXT NOT NULL,
+                scope_key        TEXT NOT NULL,
+                snapshot_at      TEXT NOT NULL,
+                headline_summary TEXT,
+                payload_json     TEXT,
+                PRIMARY KEY (report_date, scope_type, scope_key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_intel_daily_reports_scope ON intel_daily_reports(scope_key, report_date);
+
+            CREATE TABLE IF NOT EXISTS intel_daily_report_sections (
+                report_date          TEXT NOT NULL,
+                scope_key            TEXT NOT NULL,
+                section_key          TEXT NOT NULL,
+                section_label        TEXT NOT NULL,
+                signal_count         INTEGER DEFAULT 0,
+                pos_count            INTEGER DEFAULT 0,
+                neu_count            INTEGER DEFAULT 0,
+                neg_count            INTEGER DEFAULT 0,
+                high_risk_count      INTEGER DEFAULT 0,
+                summary_text         TEXT,
+                top_threads_json     TEXT,
+                evidence_quotes_json TEXT,
+                payload_json         TEXT,
+                PRIMARY KEY (report_date, scope_key, section_key)
+            );
+            CREATE INDEX IF NOT EXISTS idx_intel_daily_report_sections_scope ON intel_daily_report_sections(scope_key, report_date);
+
             CREATE TABLE IF NOT EXISTS collector_cache (
                 cache_key    TEXT PRIMARY KEY,
                 payload_json TEXT NOT NULL,
@@ -933,6 +1016,33 @@ class SentimentDB:
                 UNIQUE(snapshot_month, scope_type, scope_key)
             )""",
             "CREATE INDEX IF NOT EXISTS idx_intel_monthly_snapshots_month ON intel_monthly_snapshots(snapshot_month)",
+            """CREATE TABLE IF NOT EXISTS intel_daily_reports (
+                report_date      TEXT NOT NULL,
+                scope_type       TEXT NOT NULL,
+                scope_key        TEXT NOT NULL,
+                snapshot_at      TEXT NOT NULL,
+                headline_summary TEXT,
+                payload_json     TEXT,
+                PRIMARY KEY (report_date, scope_type, scope_key)
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_intel_daily_reports_scope ON intel_daily_reports(scope_key, report_date)",
+            """CREATE TABLE IF NOT EXISTS intel_daily_report_sections (
+                report_date          TEXT NOT NULL,
+                scope_key            TEXT NOT NULL,
+                section_key          TEXT NOT NULL,
+                section_label        TEXT NOT NULL,
+                signal_count         INTEGER DEFAULT 0,
+                pos_count            INTEGER DEFAULT 0,
+                neu_count            INTEGER DEFAULT 0,
+                neg_count            INTEGER DEFAULT 0,
+                high_risk_count      INTEGER DEFAULT 0,
+                summary_text         TEXT,
+                top_threads_json     TEXT,
+                evidence_quotes_json TEXT,
+                payload_json         TEXT,
+                PRIMARY KEY (report_date, scope_key, section_key)
+            )""",
+            "CREATE INDEX IF NOT EXISTS idx_intel_daily_report_sections_scope ON intel_daily_report_sections(scope_key, report_date)",
             """CREATE TABLE IF NOT EXISTS collector_cache (
                 cache_key    TEXT PRIMARY KEY,
                 payload_json TEXT NOT NULL,
@@ -2512,6 +2622,168 @@ class SentimentDB:
                 (snapshot_month, scope_type, scope_key),
             )
             return self._adapter.fetchone_dict(c, c.fetchone())
+        finally:
+            conn.close()
+
+    def save_intel_daily_report(self, payload: Dict[str, Any]) -> int:
+        columns = [
+            "report_date", "scope_type", "scope_key", "snapshot_at",
+            "headline_summary", "payload_json",
+        ]
+        sql = self._upsert_sql(
+            "intel_daily_reports",
+            columns,
+            ["report_date", "scope_type", "scope_key"],
+            ["snapshot_at", "headline_summary", "payload_json"],
+        )
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(sql, tuple(payload.get(col) for col in columns))
+            conn.commit()
+            return 1
+        finally:
+            conn.close()
+
+    def get_intel_daily_report(self, report_date: str, scope_type: str, scope_key: str) -> Optional[Dict[str, Any]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"SELECT * FROM intel_daily_reports WHERE report_date = {ph} AND scope_type = {ph} AND scope_key = {ph}",
+                (report_date, scope_type, scope_key),
+            )
+            return self._adapter.fetchone_dict(c, c.fetchone())
+        finally:
+            conn.close()
+
+    def save_intel_daily_report_section(self, payload: Dict[str, Any]) -> int:
+        columns = [
+            "report_date", "scope_key", "section_key", "section_label",
+            "signal_count", "pos_count", "neu_count", "neg_count", "high_risk_count",
+            "summary_text", "top_threads_json", "evidence_quotes_json", "payload_json",
+        ]
+        sql = self._upsert_sql(
+            "intel_daily_report_sections",
+            columns,
+            ["report_date", "scope_key", "section_key"],
+            [col for col in columns if col not in {"report_date", "scope_key", "section_key"}],
+        )
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(sql, tuple(payload.get(col) for col in columns))
+            conn.commit()
+            return 1
+        finally:
+            conn.close()
+
+    def get_intel_daily_report_sections(self, report_date: str, scope_key: str) -> List[Dict[str, Any]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"""SELECT * FROM intel_daily_report_sections
+                    WHERE report_date = {ph} AND scope_key = {ph}
+                    ORDER BY high_risk_count DESC, signal_count DESC, section_key ASC""",
+                (report_date, scope_key),
+            )
+            return self._adapter.fetchall_dict(c)
+        finally:
+            conn.close()
+
+    def get_daily_report_signal_rows(self, report_date: str, scope_key: str) -> List[Dict[str, Any]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"""
+                SELECT
+                    a.id AS analysis_id,
+                    a.thread_id,
+                    t.keyword,
+                    t.channel,
+                    t.board,
+                    t.title,
+                    t.url,
+                    t.author,
+                    t.published_at,
+                    t.first_seen_at,
+                    a.sentiment,
+                    a.score,
+                    a.theme,
+                    a.reason,
+                    a.analyzed_at
+                FROM analyses a
+                JOIN threads t ON t.id = a.thread_id
+                WHERE t.keyword = {ph}
+                  AND (
+                    substr(COALESCE(t.first_seen_at, a.analyzed_at), 1, 10) = {ph}
+                    OR substr(COALESCE(t.published_at, ''), 1, 10) = {ph}
+                    OR EXISTS (
+                        SELECT 1
+                        FROM thread_items ti2
+                        WHERE ti2.thread_id = t.id
+                          AND ti2.item_type <> 'main'
+                          AND substr(COALESCE(ti2.published_at, ''), 1, 10) = {ph}
+                    )
+                  )
+                  AND a.id = (
+                    SELECT a2.id
+                    FROM analyses a2
+                    WHERE a2.thread_id = a.thread_id
+                    ORDER BY a2.analyzed_at DESC, a2.id DESC
+                    LIMIT 1
+                  )
+                ORDER BY a.score DESC, COALESCE(t.published_at, t.first_seen_at, a.analyzed_at) DESC
+                """,
+                (scope_key, report_date, report_date, report_date),
+            )
+            rows = self._adapter.fetchall_dict(c)
+            for row in rows:
+                row["url"] = self._public_thread_url(row.get("channel") or "", row.get("url"), row.get("title") or "")
+            return rows
+        finally:
+            conn.close()
+
+    def get_daily_report_evidence_rows(self, report_date: str, scope_key: str) -> List[Dict[str, Any]]:
+        ph = self._ph()
+        conn = self._adapter.get_connection()
+        try:
+            c = conn.cursor()
+            c.execute(
+                f"""
+                SELECT
+                    ti.thread_id,
+                    ti.content,
+                    ti.author,
+                    ti.published_at,
+                    ti.sequence,
+                    ia.sentiment,
+                    ia.score,
+                    ia.theme,
+                    ia.reason,
+                    ia.analyzed_at
+                FROM thread_items ti
+                JOIN threads t ON t.id = ti.thread_id
+                LEFT JOIN item_analyses ia ON ia.id = (
+                    SELECT ia2.id
+                    FROM item_analyses ia2
+                    WHERE ia2.thread_item_id = ti.id
+                    ORDER BY ia2.analyzed_at DESC, ia2.id DESC
+                    LIMIT 1
+                )
+                WHERE t.keyword = {ph}
+                  AND ti.item_type <> 'main'
+                  AND substr(COALESCE(ti.published_at, ''), 1, 10) = {ph}
+                ORDER BY COALESCE(ia.score, 0) DESC, ti.sequence ASC, ti.id ASC
+                """,
+                (scope_key, report_date),
+            )
+            return self._adapter.fetchall_dict(c)
         finally:
             conn.close()
 

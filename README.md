@@ -169,4 +169,48 @@ python3 scripts/capture_monthly_intelligence_snapshot.py --month 2026-05
 ### 前端頁面
 
 - `dashboard.html`：今日監控
+- `daily-report.html`：昨日分類日報 / 主品牌晨會匯報
 - `intelligence.html`：品牌決策 / 30-90 天議題與月度觀察
+
+---
+
+## Daily Report Layer
+
+`昨日分類日報` 是介於 `dashboard / 今日監控` 與 `intelligence / 品牌決策` 之間的新產品層。
+
+用途：
+
+- 按固定六大分類整理「昨天一整天」的主品牌輿情
+- 讓品牌 / 行銷 / 公關人員在晨會前快速完成匯報
+- 每個分類都附代表文章與推文 / 留言摘錄，方便回查舉證
+
+第一版固定分類：
+
+- `食安 / 品質異常`
+- `商品反饋`
+- `服務體驗`
+- `價格 / CP 值`
+- `活動 / 聯名 / 行銷`
+- `會員 / 支付 / APP`
+
+### 手動建立昨日日報
+
+```bash
+python3 scripts/capture_daily_classified_report.py
+```
+
+可透過環境變數指定主品牌：
+
+```bash
+DAILY_REPORT_SCOPE_KEY=7-ELEVEN python3 scripts/capture_daily_classified_report.py
+```
+
+若要針對特定日期重建：
+
+```bash
+python3 scripts/capture_daily_classified_report.py --date 2026-05-25
+```
+
+### API
+
+- `GET /daily-report?date=2026-05-26&scope_key=7-ELEVEN`
