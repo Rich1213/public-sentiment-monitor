@@ -11,39 +11,52 @@ class TopicBuilder:
 
     def build_topics(self, event_cases: List[Dict]) -> List[Dict]:
         grouped: Dict[tuple, List[Dict]] = {}
+        market_grouped: Dict[str, List[Dict]] = {}
         for case in event_cases:
             key = (case["keyword"], case["canonical_theme"])
             grouped.setdefault(key, []).append(case)
+            market_grouped.setdefault(case["canonical_theme"], []).append(case)
 
         topics: List[Dict] = []
         for (scope_key, theme), rows in grouped.items():
-            first_seen_at = min(row["first_seen_at"] for row in rows)
-            last_seen_at = max(row["last_seen_at"] for row in rows)
-            signal_count = sum(int(row["evidence_count"]) for row in rows)
-            source_mix: Dict[str, int] = {}
-            sentiment_mix: Dict[str, int] = {}
-            for row in rows:
-                for channel, count in json.loads(row.get("source_mix_json") or "{}").items():
-                    source_mix[channel] = source_mix.get(channel, 0) + int(count)
-                for sentiment, count in json.loads(row.get("sentiment_mix_json") or "{}").items():
-                    sentiment_mix[sentiment] = sentiment_mix.get(sentiment, 0) + int(count)
-            topics.append(
-                {
-                    "id": hashlib.md5(f"{scope_key}:{theme}".encode()).hexdigest(),
-                    "scope_key": scope_key,
-                    "canonical_theme": theme,
-                    "label": theme,
-                    "first_seen_at": first_seen_at,
-                    "last_seen_at": last_seen_at,
-                    "event_count": len(rows),
-                    "signal_count": signal_count,
-                    "sentiment_mix_json": json.dumps(sentiment_mix, ensure_ascii=False),
-                    "source_mix_json": json.dumps(source_mix, ensure_ascii=False),
-                    "metadata_json": json.dumps({"event_case_ids": [row["id"] for row in rows]}, ensure_ascii=False),
-                    "event_case_ids": [row["id"] for row in rows],
-                }
-            )
+            topics.append(self._build_topic_payload(scope_key, theme, rows))
+        for theme, rows in market_grouped.items():
+            topics.append(self._build_topic_payload("market", theme, rows))
         return topics
+
+    def _build_topic_payload(self, scope_key: str, theme: str, rows: List[Dict]) -> Dict:
+        first_seen_at = min(row["first_seen_at"] for row in rows)
+        last_seen_at = max(row["last_seen_at"] for row in rows)
+        signal_count = sum(int(row["evidence_count"]) for row in rows)
+        source_mix: Dict[str, int] = {}
+        sentiment_mix: Dict[str, int] = {}
+        source_keywords = []
+        for row in rows:
+            source_keywords.append(row.get("keyword"))
+            for channel, count in json.loads(row.get("source_mix_json") or "{}").items():
+                source_mix[channel] = source_mix.get(channel, 0) + int(count)
+            for sentiment, count in json.loads(row.get("sentiment_mix_json") or "{}").items():
+                sentiment_mix[sentiment] = sentiment_mix.get(sentiment, 0) + int(count)
+        return {
+            "id": hashlib.md5(f"{scope_key}:{theme}".encode()).hexdigest(),
+            "scope_key": scope_key,
+            "canonical_theme": theme,
+            "label": theme,
+            "first_seen_at": first_seen_at,
+            "last_seen_at": last_seen_at,
+            "event_count": len(rows),
+            "signal_count": signal_count,
+            "sentiment_mix_json": json.dumps(sentiment_mix, ensure_ascii=False),
+            "source_mix_json": json.dumps(source_mix, ensure_ascii=False),
+            "metadata_json": json.dumps(
+                {
+                    "event_case_ids": [row["id"] for row in rows],
+                    "source_keywords": [kw for kw in dict.fromkeys(source_keywords) if kw],
+                },
+                ensure_ascii=False,
+            ),
+            "event_case_ids": [row["id"] for row in rows],
+        }
 
     def build_competitive_matrix(self, rows: List[Dict]) -> Dict[str, Dict[str, int]]:
         matrix: Dict[str, Dict[str, int]] = {}

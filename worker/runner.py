@@ -76,6 +76,38 @@ def _local_now() -> datetime:
     return datetime.now(ZoneInfo(os.getenv("APP_TIMEZONE", "Asia/Taipei")))
 
 
+def _run_intelligence_refresh(db, keywords: List[str]) -> None:
+    from src.jobs.intelligence_projector_job import run_intelligence_projector
+    from src.jobs.monthly_intelligence_snapshot_job import (
+        DEFAULT_INTELLIGENCE_SCOPE_KEYS,
+        run_monthly_intelligence_snapshot_capture,
+    )
+
+    snapshot_month = _local_now().strftime("%Y-%m")
+    projected = run_intelligence_projector(db=db)
+    print(
+        "  🧭 Intelligence projector 完成："
+        f"event_cases={projected.get('event_cases', 0)} "
+        f"topics={projected.get('topics', 0)}"
+    )
+
+    scope_keys = [
+        scope_key
+        for scope_key in DEFAULT_INTELLIGENCE_SCOPE_KEYS
+        if scope_key == "market" or scope_key in keywords
+    ]
+    captured = run_monthly_intelligence_snapshot_capture(
+        db=db,
+        snapshot_month=snapshot_month,
+        scope_keys=scope_keys,
+    )
+    print(
+        "  🗂 Monthly intelligence snapshot 完成："
+        f"month={captured.get('snapshot_month')} "
+        f"written={captured.get('written', 0)}"
+    )
+
+
 # ─────────────────────────────────────────────────────────────
 # 格式化輸出工具
 # ─────────────────────────────────────────────────────────────
@@ -463,7 +495,6 @@ def run_all_brands(
                 import traceback
                 traceback.print_exc()
 
-        db.save_daily_snapshots()
         _print_sep("═")
         print(f"  ✅ 本次監控完成｜{_local_now().strftime('%Y-%m-%d %H:%M:%S')}")
         _print_sep("═")
@@ -472,6 +503,12 @@ def run_all_brands(
         batch_status = "failed"
         raise
     finally:
+        if batch_status == "completed":
+            try:
+                _run_intelligence_refresh(db, keywords)
+            except Exception as e:
+                logger.error("Intelligence refresh 失敗：%s", e, exc_info=True)
+                print(f"\n  ⚠️  Intelligence refresh 失敗：{e}")
         if batch_id is not None:
             try:
                 db.close_monitor_batch(batch_id, status=batch_status)

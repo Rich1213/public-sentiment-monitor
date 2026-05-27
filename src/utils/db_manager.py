@@ -196,6 +196,12 @@ class SentimentDB:
 
     def __init__(self, db_path: str = None):
         self._adapter = DBAdapter()
+        self.last_snapshot_stats: Dict[str, Any] = {
+            "written": 0,
+            "skipped_existing": 0,
+            "brand_map_empty": False,
+            "keywords_considered": 0,
+        }
 
         # 向後相容：允許傳入 db_path 覆寫 SQLite 路徑
         if db_path is not None and not self._adapter.is_postgres:
@@ -1773,6 +1779,12 @@ class SentimentDB:
         snapshot_date = snapshot_date or self._today_str()
         summary = self.get_dashboard_day_summary(snapshot_date=snapshot_date, keywords=keywords)
         brand_map = summary.get("brand_map") or {}
+        self.last_snapshot_stats = {
+            "written": 0,
+            "skipped_existing": 0,
+            "brand_map_empty": not bool(brand_map),
+            "keywords_considered": len(brand_map),
+        }
         if not brand_map:
             return 0
 
@@ -1791,6 +1803,7 @@ class SentimentDB:
         try:
             c = conn.cursor()
             written = 0
+            skipped_existing = 0
             for keyword, brand in brand_map.items():
                 if freeze_mode:
                     c.execute(
@@ -1798,6 +1811,7 @@ class SentimentDB:
                         (snapshot_date, keyword),
                     )
                     if c.fetchone():
+                        skipped_existing += 1
                         continue
                 total = max(int(brand.get("total", 0)), 1)
                 negative_count = int(brand.get("neg", 0))
@@ -1846,6 +1860,12 @@ class SentimentDB:
                 c.execute(sql, row_values)
                 written += 1
             conn.commit()
+            self.last_snapshot_stats = {
+                "written": written,
+                "skipped_existing": skipped_existing,
+                "brand_map_empty": False,
+                "keywords_considered": len(brand_map),
+            }
             return written
         finally:
             conn.close()
@@ -2497,6 +2517,11 @@ class SentimentDB:
 
     def get_intelligence_signal_rows(self, since_date: str) -> List[Dict[str, Any]]:
         ph = self._ph()
+        published_expr = (
+            "COALESCE(t.published_at, a.analyzed_at::text)"
+            if self._adapter.is_postgres
+            else "COALESCE(t.published_at, a.analyzed_at)"
+        )
         conn = self._adapter.get_connection()
         try:
             c = conn.cursor()
@@ -2510,11 +2535,11 @@ class SentimentDB:
                     a.sentiment,
                     a.score,
                     a.theme,
-                    COALESCE(t.published_at, a.analyzed_at) AS published_at
+                    {published_expr} AS published_at
                 FROM analyses a
                 JOIN threads t ON t.id = a.thread_id
-                WHERE COALESCE(t.published_at, a.analyzed_at) >= {ph}
-                ORDER BY COALESCE(t.published_at, a.analyzed_at) ASC
+                WHERE {published_expr} >= {ph}
+                ORDER BY {published_expr} ASC
                 """,
                 (since_date,),
             )
